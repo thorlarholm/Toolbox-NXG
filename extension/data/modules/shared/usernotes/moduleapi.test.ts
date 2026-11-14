@@ -941,6 +941,31 @@ describe('updateUserNotes', () => {
 		await Promise.all([first, second,],)
 		expect(order,).toHaveLength(2,)
 	})
+
+	it('compat-on: reads NXG manifest, shards, and legacy mirror only once per updateUserNotes save', async () => {
+		mockLayout('nxg', true,)
+		const storedUser = makeUser('existing', 'stored note',)
+		const legacyPage = encodeUsernotesV6({
+			ver: 6,
+			users: {existing: storedUser,},
+		},)
+		mockWikiPages({
+			[NXG_PAGE]: JSON.stringify(singleShardManifest(),),
+			[`${NXG_PAGE}/s1-00000000`]: JSON.stringify(encodeNotesShard({existing: storedUser,},),),
+			usernotes: JSON.stringify(legacyPage,),
+		},)
+
+		await updateUserNotes('sub', (fresh,) =>
+			applyUserNoteMutation(fresh, 'newuser', {
+				change: 'add',
+				note: {note: 'new note', time: 1700000001, mod: 'me', type: 'botban', link: '',},
+			},),)
+
+		const readPages = vi.mocked(readFromWiki,).mock.calls.map((call,) => call[1])
+		expect(readPages.filter((p,) => p === NXG_PAGE),).toHaveLength(1,)
+		expect(readPages.filter((p,) => p === `${NXG_PAGE}/s1-00000000`),).toHaveLength(1,)
+		expect(readPages.filter((p,) => p === 'usernotes'),).toHaveLength(1,)
+	})
 })
 
 describe('getSubredditColors', () => {

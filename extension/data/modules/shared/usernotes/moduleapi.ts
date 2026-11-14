@@ -324,7 +324,12 @@ export function saveUserNotes (subreddit: string, notes: UserNotesData, reason: 
 }
 
 /** Core write logic for {@link saveUserNotes}, called inside the per-subreddit save queue. */
-async function doSaveUserNotes (subreddit: string, notes: UserNotesData, reason: string,): Promise<void> {
+async function doSaveUserNotes (
+	subreddit: string,
+	notes: UserNotesData,
+	reason: string,
+	alreadyReconciled = false,
+): Promise<void> {
 	neutralTextFeedback('Saving usernotes...',)
 	if (notes.ver < notesSchema) { notes.ver = notesSchema }
 	const cleanedNotes = cleanUserNotes(notes,)
@@ -359,7 +364,7 @@ async function doSaveUserNotes (subreddit: string, notes: UserNotesData, reason:
 			)
 		} else {
 			const mirrorEnabled = compatMirrorEnabled(layout,)
-			if (mirrorEnabled) {
+			if (mirrorEnabled && !alreadyReconciled) {
 				// Capture 6.x edits made since our last read: diff the legacy
 				// mirror against the shards as stored, and fold the resulting
 				// adds/archives into the outgoing dataset. The diff base must
@@ -486,7 +491,7 @@ async function doUpdateUserNotes (
 	const reason = transform(notes,)
 	if (reason === undefined) { return notes }
 
-	await doSaveUserNotes(subreddit, notes, reason,)
+	await doSaveUserNotes(subreddit, notes, reason, true,)
 	return notes
 }
 
