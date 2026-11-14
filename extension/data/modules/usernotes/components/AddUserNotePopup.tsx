@@ -97,6 +97,25 @@ export interface AddUserNotePopupProps {
 	/** When true, auto-ban options are suppressed since mods cannot be banned. */
 	targetIsMod?: boolean | undefined
 	/**
+	 * Optional async resolver for `targetIsMod`, letting the popup mount
+	 * immediately without blocking on `/about/moderators.json`.
+	 */
+	resolveTargetIsMod?: (() => Promise<boolean>) | undefined
+	/**
+	 * Optional async resolver for thing-derived context (`messageLink`,
+	 * `banTokenInfo`, `defaultBanMessage`), letting the popup mount immediately
+	 * without blocking on `/api/info.json`.
+	 */
+	resolveThingContext?:
+		| (() => Promise<
+			{
+				messageLink?: string | undefined
+				banTokenInfo: Record<string, string>
+				defaultBanMessage: string
+			} | undefined
+		>)
+		| undefined
+	/**
 	 * The subreddit's usernote save-requirement flags and enforcement mode.
 	 * Combined with the acting moderator's personal settings to decide whether a
 	 * type/text/link is required before saving; see `resolveUsernoteRequirements`.
@@ -135,6 +154,8 @@ export function AddUserNotePopup ({
 	onRefreshNotes,
 	onClose,
 	targetIsMod = false,
+	resolveTargetIsMod,
+	resolveThingContext,
 	subRequire,
 	savedBanMacros = [],
 	banTokenInfo = {author: user, subreddit, ...(currentUser ? {mod: currentUser,} : {}),},
@@ -154,8 +175,19 @@ export function AddUserNotePopup ({
 	const [busyNoteIds, setBusyNoteIds,] = useState<Set<number>>(() => new Set())
 	const [showArchived, setShowArchived,] = useState(false,)
 	const [triggerBan, setTriggerBan,] = useState(true,)
-	const [banMessage, setBanMessage,] = useState(defaultBanMessage,)
+	const [resolvedTargetIsMod, setResolvedTargetIsMod,] = useState(false,)
+	const [resolvedMessageLink, setResolvedMessageLink,] = useState<string | undefined>(undefined,)
+	const [resolvedBanTokenInfo, setResolvedBanTokenInfo,] = useState<Record<string, string> | undefined>(undefined,)
+	const [resolvedDefaultBanMessage, setResolvedDefaultBanMessage,] = useState<string | undefined>(undefined,)
+	const effectiveTargetIsMod = targetIsMod || resolvedTargetIsMod
+	const effectiveMessageLink = messageLink ?? resolvedMessageLink
+	const effectiveBanTokenInfo = resolvedBanTokenInfo ?? banTokenInfo
+	const effectiveDefaultBanMessage = resolvedDefaultBanMessage ?? defaultBanMessage
+	const [banMessage, setBanMessage,] = useState(effectiveDefaultBanMessage,)
 	const notesTouchedRef = useRef(false,)
+	const banMessageDirtyRef = useRef(false,)
+	const prevSelectedTypeRef = useRef(selectedType,)
+	const modCheckPromiseRef = useRef<Promise<boolean> | null>(null,)
 
 	const closePopupAfterNoteSave = useSetting(usernotes, 'closePopupAfterNoteSave', true,)
 
@@ -208,10 +240,48 @@ export function AddUserNotePopup ({
 	}, [onRefreshNotes,],)
 
 	// Switching type resets the ban options, with the message back at the subreddit's default.
+	// Async thing-context resolution updates the default message only while the user hasn't edited it.
 	useEffect(() => {
-		setTriggerBan(true,)
-		setBanMessage(defaultBanMessage,)
-	}, [selectedType, defaultBanMessage,],)
+		if (prevSelectedTypeRef.current !== selectedType) {
+			prevSelectedTypeRef.current = selectedType
+			banMessageDirtyRef.current = false
+			setTriggerBan(true,)
+			setBanMessage(effectiveDefaultBanMessage,)
+			return
+		}
+		if (!banMessageDirtyRef.current) {
+			setBanMessage(effectiveDefaultBanMessage,)
+		}
+	}, [selectedType, effectiveDefaultBanMessage,],)
+
+	useEffect(() => {
+		if (!resolveTargetIsMod) { return }
+		let alive = true
+		const promise = resolveTargetIsMod().then((isMod,) => {
+			if (alive) { setResolvedTargetIsMod(isMod,) }
+			return isMod
+		},).catch(() => false)
+		modCheckPromiseRef.current = promise
+		return () => {
+			alive = false
+		}
+	}, [resolveTargetIsMod,],)
+
+	useEffect(() => {
+		if (!resolveThingContext) { return }
+		let alive = true
+		resolveThingContext().then((ctx,) => {
+			if (!alive || !ctx) { return }
+			if (ctx.messageLink !== undefined) { setResolvedMessageLink(ctx.messageLink,) }
+			setResolvedBanTokenInfo(ctx.banTokenInfo,)
+			setResolvedDefaultBanMessage(ctx.defaultBanMessage,)
+		},).catch((error: unknown,) => {
+			log.error('Failed to resolve usernote thing context:', error,)
+		},)
+		return () => {
+			alive = false
+		}
+	}, [resolveThingContext,],)
 
 	const currentColor = selectedType !== undefined ? colors.find((c,) => c.key === selectedType) : undefined
 	const autoBanDuration = currentColor?.banDuration
@@ -226,15 +296,19 @@ export function AddUserNotePopup ({
 			setError('Add note text or a type',)
 			return
 		}
-		const banning = editingNoteId === undefined && hasAutoBan && triggerBan && !targetIsMod
-		if (banning && requireBanMessage && !banMessage.trim()) {
-			setError(`/r/${subreddit} requires a ban message`,)
-			return
-		}
 		setError(undefined,)
 		setSaving(true,)
-		notesTouchedRef.current = true
 		try {
+			let isTargetMod = effectiveTargetIsMod
+			if (!isTargetMod && editingNoteId === undefined && hasAutoBan && triggerBan && modCheckPromiseRef.current) {
+				isTargetMod = await modCheckPromiseRef.current
+			}
+			const banning = editingNoteId === undefined && hasAutoBan && triggerBan && !isTargetMod
+			if (banning && requireBanMessage && !banMessage.trim()) {
+				setError(`/r/${subreddit} requires a ban message`,)
+				return
+			}
+			notesTouchedRef.current = true
 			if (editingNoteId !== undefined) {
 				const editedText = noteText.trim()
 				await onEditNote(editingNoteId, {note: editedText, type: selectedType,},)
@@ -251,8 +325,8 @@ export function AddUserNotePopup ({
 					note: noteText.trim(),
 					type: selectedType,
 					includeLink: includeLink && !disableLink,
-					includeMessageLink: includeMessageLink && !!messageLink,
-					triggerBan: hasAutoBan && triggerBan && !targetIsMod,
+					includeMessageLink: includeMessageLink && !!effectiveMessageLink,
+					triggerBan: banning,
 					banMessage,
 				},)
 				if (closePopupAfterNoteSave) {
@@ -486,7 +560,7 @@ export function AddUserNotePopup ({
 					<span>{editingNoteId === undefined ? 'Add Toolbox note' : 'Edit recent note'}</span>
 					{editingNoteId === undefined && (
 						<div className={css.includeLinkGroup}>
-							{messageLink && (
+							{effectiveMessageLink && (
 								<label className={css.includeLink}>
 									<input
 										type="checkbox"
@@ -555,7 +629,10 @@ export function AddUserNotePopup ({
 						macros={savedBanMacros}
 						disabled={saving}
 						// The note type fixes this ban's duration, so only the message applies.
-						onApply={(macro,) => setBanMessage(resolveBanMacro(macro, banTokenInfo,).message,)}
+						onApply={(macro,) => {
+							banMessageDirtyRef.current = true
+							setBanMessage(resolveBanMacro(macro, effectiveBanTokenInfo,).message,)
+						}}
 					/>
 				)}
 				{editingNoteId === undefined && hasAutoBan && triggerBan && (
@@ -565,7 +642,10 @@ export function AddUserNotePopup ({
 						rows={2}
 						value={banMessage}
 						disabled={saving}
-						onChange={(event,) => setBanMessage(event.target.value,)}
+						onChange={(event,) => {
+							banMessageDirtyRef.current = true
+							setBanMessage(event.target.value,)
+						}}
 					/>
 				)}
 				{editingNoteId === undefined && hasAutoBan && triggerBan && <BanTokenWarning text={banMessage} />}
@@ -575,12 +655,12 @@ export function AddUserNotePopup ({
 							<input
 								type="checkbox"
 								className={css.toggle}
-								checked={triggerBan && !targetIsMod}
-								disabled={saving || targetIsMod}
+								checked={triggerBan && !effectiveTargetIsMod}
+								disabled={saving || effectiveTargetIsMod}
 								onChange={(event,) => setTriggerBan(event.target.checked,)}
 							/>
 							<span>
-								{targetIsMod
+								{effectiveTargetIsMod
 									? `${
 										autoBanDuration === 0
 											? 'Issue Permanent Ban'

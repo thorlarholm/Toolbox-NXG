@@ -457,4 +457,74 @@ describe('AddUserNotePopup', () => {
 		clickByText(host, 'Spam',)
 		expect(saveButton.disabled,).toBe(false,)
 	})
+
+	it('awaits a pending resolveTargetIsMod check before triggering an auto-ban on save', async () => {
+		let resolveMod!: (isMod: boolean,) => void
+		const resolveTargetIsMod = vi.fn(() =>
+			new Promise<boolean>((resolve,) => {
+				resolveMod = resolve
+			},)
+		)
+		const onSave = vi.fn().mockResolvedValue(undefined,)
+		const host = renderPopup({
+			colors: [{key: 'autoban', text: 'Auto Ban', color: 'red', banDuration: 7,},],
+			resolveTargetIsMod,
+			onSave,
+		},)
+
+		clickByText(host, 'Auto Ban',)
+		setNoteInputValue(host, 'mod note',)
+		await clickByTextAsync(host, 'Save for /r/testsub',)
+
+		// Save waits for the mod check rather than assuming non-mod.
+		expect(onSave,).not.toHaveBeenCalled()
+
+		await act(async () => {
+			resolveMod(true,)
+			await Promise.resolve()
+		},)
+
+		expect(onSave,).toHaveBeenCalledWith(expect.objectContaining({triggerBan: false,},),)
+	})
+
+	it('preserves user-edited ban message when resolveThingContext resolves after mount', async () => {
+		let resolveCtx!: (
+			ctx: {messageLink?: string; banTokenInfo: Record<string, string>; defaultBanMessage: string},
+		) => void
+		const resolveThingContext = vi.fn(() =>
+			new Promise<
+				{messageLink?: string; banTokenInfo: Record<string, string>; defaultBanMessage: string}
+			>((resolve,) => {
+				resolveCtx = resolve
+			},)
+		)
+		const host = renderPopup({
+			colors: [{key: 'autoban', text: 'Auto Ban', color: 'red', banDuration: 7,},],
+			defaultBanMessage: 'initial default',
+			resolveThingContext,
+		},)
+
+		clickByText(host, 'Auto Ban',)
+		const textarea = host.querySelector<HTMLTextAreaElement>('textarea[placeholder="ban note to user"]',)!
+		expect(textarea.value,).toBe('initial default',)
+
+		act(() => {
+			const valueSetter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(textarea,), 'value',)?.set
+			valueSetter?.call(textarea, 'custom mod message',)
+			textarea.dispatchEvent(new InputEvent('input', {bubbles: true, data: 'custom mod message',},),)
+		},)
+		expect(textarea.value,).toBe('custom mod message',)
+
+		await act(async () => {
+			resolveCtx({
+				messageLink: 'https://www.reddit.com/message/messages/abc',
+				banTokenInfo: {author: 'alice', subreddit: 'testsub', title: 'Post title',},
+				defaultBanMessage: 'resolved default with Post title',
+			},)
+			await Promise.resolve()
+		},)
+
+		expect(textarea.value,).toBe('custom mod message',)
+		expect(host.textContent,).toContain('Include removal message link',)
+	})
 })

@@ -198,17 +198,20 @@ export function createNotesDisplay (
 			void (async () => {
 				event.preventDefault()
 				event.stopPropagation()
-				let link = ''
+				let link = context.permalink ?? ''
 				let disableLink = false
 				// The item the note is about, when there is one; it also fills ban message tokens.
-				let thing: ThingInfo | undefined
+				let thingPromise: Promise<ThingInfo | undefined> | undefined
 				const conversationId = (rawDetail as {conversationId?: string} | undefined)?.conversationId
 				if (conversationId) {
 					const shortId = conversationId.replace('ModmailConversation_', '',)
 					if (shortId) { link = `https://www.reddit.com/mail/perma/${shortId}` }
 				} else if (thingId) {
-					thing = await getApiThingInfo(subreddit, thingId, true,)
-					link = thing.permalink
+					// Fetch in parallel without blocking the popup from appearing immediately.
+					thingPromise = getApiThingInfo(subreddit, thingId, true,).catch((error: unknown,) => {
+						log.warn('Failed to fetch thing info for usernote:', error,)
+						return undefined
+					},)
 				} else {
 					disableLink = true
 				}
@@ -222,7 +225,7 @@ export function createNotesDisplay (
 						top: positions.topPosition,
 						left: positions.leftPosition,
 					},
-					thing,
+					thingPromise,
 				)
 			})()
 		)
@@ -291,20 +294,21 @@ export function createNotesDisplay (
 		link: string,
 		disableLink: boolean,
 		initialPosition: {top: number; left: number},
-		thing?: ThingInfo,
+		thingPromise?: Promise<ThingInfo | undefined>,
 	) {
-		const [colors, modListResult, layout, currentUser, config,] = await Promise.all([
-			getSubredditColors(subreddit,),
-			getModeratorListResult(subreddit, user, '',).catch(() => ({
-				targetIsMod: false,
-				currentUserPermissions: [],
-			})),
+		// Start the moderator-status lookup right away, but don't block popup mount on it.
+		const modCheckPromise = getModeratorListResult(subreddit, user, '',)
+			.then((result,) => result.targetIsMod)
+			.catch(() => false)
+
+		const cachedSubState = getSubredditNotes(subreddit,)
+		const [colors, layout, currentUser, config,] = await Promise.all([
+			cachedSubState ? Promise.resolve(cachedSubState.colors,) : getSubredditColors(subreddit,),
 			resolveWikiLayout(subreddit,),
 			getCurrentUser().catch(() => ''),
 			getConfig(subreddit,).catch(() => undefined),
 		],)
-		const targetIsMod = modListResult.targetIsMod
-		const banTokens = banTokenInfo({author: user, subreddit, mod: currentUser,}, thing,)
+		const banTokens = banTokenInfo({author: user, subreddit, mod: currentUser,},)
 		// Archive/soft-delete need NXG storage; the legacy v6 page can't carry
 		// tombstones, so legacy-fallback subs keep plain hard deletes.
 		const archivingAvailable = layout.state !== 'legacyFallback' && !layout.nxgMissing
@@ -319,7 +323,7 @@ export function createNotesDisplay (
 				...(n.messageLink !== undefined && {messageLink: n.messageLink,}),
 				...(n.archived !== undefined && {archived: n.archived,}),
 			}))
-		const initialNotes = toExistingNotes(getSubredditNotes(subreddit,)?.notes ?? {ver: notesSchema, users: {},},)
+		const initialNotes = toExistingNotes(cachedSubState?.notes ?? {ver: notesSchema, users: {},},)
 		// If a removal earlier this page session sent a modmail for the linked
 		// thing, offer to attach that conversation to the note as well.
 		const availableMessageLink = link ? getMessageLink(link,) : undefined
@@ -333,7 +337,20 @@ export function createNotesDisplay (
 			colors,
 			initialNotes,
 			findColor: (key: string,) => findSubredditColor(colors, key,),
-			targetIsMod,
+			resolveTargetIsMod: () => modCheckPromise,
+			...(thingPromise && {
+				resolveThingContext: async () => {
+					const resolved = await thingPromise
+					if (!resolved) { return undefined }
+					const tokens = banTokenInfo({author: user, subreddit, mod: currentUser,}, resolved,)
+					const resolvedLink = resolved.permalink || link
+					return {
+						messageLink: resolvedLink ? getMessageLink(resolvedLink,) : undefined,
+						banTokenInfo: tokens,
+						defaultBanMessage: resolveBanDefaults(config?.banMacros, tokens,).message,
+					}
+				},
+			}),
 			archivingAvailable,
 			currentUser,
 			subRequire: subUsernoteRequireFromConfig(config,),
@@ -348,14 +365,18 @@ export function createNotesDisplay (
 			},
 			onSave: async ({note, type, includeLink, includeMessageLink, triggerBan, banMessage,},) => {
 				if (!user || !subreddit) { return }
+				const resolvedThing = (includeLink || triggerBan) && thingPromise ? await thingPromise : undefined
+				const resolvedLink = link || resolvedThing?.permalink || ''
+				const resolvedMessageLink = availableMessageLink
+					?? (resolvedLink ? getMessageLink(resolvedLink,) : undefined)
 				const time = nowInSeconds()
 				const mod = await getCurrentUser()
-				const messageLink = includeMessageLink ? availableMessageLink : undefined
+				const messageLink = includeMessageLink ? resolvedMessageLink : undefined
 				const newNote = makeUserNoteEntry({
 					note,
 					time,
 					mod,
-					link: includeLink ? link : '',
+					link: includeLink ? resolvedLink : '',
 					...(type !== undefined && {type,}),
 					...(messageLink !== undefined && {messageLink,}),
 				},)
@@ -371,7 +392,7 @@ export function createNotesDisplay (
 								days: color.banDuration,
 								note: note.trim(),
 								message: banMessage,
-								...(includeLink && link ? {context: link,} : {}),
+								...(includeLink && resolvedLink ? {context: resolvedLink,} : {}),
 							},
 						)
 					}
@@ -389,7 +410,7 @@ export function createNotesDisplay (
 					note: note.trim(),
 					mod,
 					time,
-					link: includeLink ? link : '',
+					link: includeLink ? resolvedLink : '',
 					...(messageLink !== undefined && {messageLink,}),
 				} satisfies ExistingNote
 			},
