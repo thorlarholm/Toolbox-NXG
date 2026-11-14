@@ -18,8 +18,8 @@
 ## 3. Contribution Workflow & Pull Request Hygiene
 
 - **Remotes & Upstream-Clean Branching**:
-  - `origin`: `https://github.com/thorlarholm/Toolbox-NXG.git`
-  - `upstream`: `https://github.com/toolbox-nxg/Toolbox-NXG.git`
+  - `origin`: `git@github.com:thorlarholm/Toolbox-NXG.git`
+  - `upstream`: `git@github.com:toolbox-nxg/Toolbox-NXG.git`
   - Local `main` holds workspace-only commits (`fc4694ae` onward for [`AGENTS.md`](AGENTS.md)).
   - Always create PR branches from `origin/main` (synced with `upstream/main`), never from local `main`, so workspace-only setup and documentation never leak into upstream PRs.
   - Keep PR branches focused strictly on the intended Toolbox-NXG review findings, fixes, or enhancements.
@@ -50,3 +50,13 @@
 - Pinned non-interactive `zsh` to nvm Node `v24.14.1` in `~/.zshenv`, configured `min-release-age=7` in `~/.npmrc`, installed packages via `npm ci`, and verified all 7 checks pass cleanly (`fmt`, `lint`, `lint:css`, `lint:params`, `typecheck`, `test` [204 files / 2647 tests], `build`).
 - Verified `gh` CLI authenticated as `thorlarholm` and **Google Chrome** installed for unpacked `build/chrome/` testing (**Firefox** not currently installed locally).
 - **Pending (non-blocking)**: Interactive `sudo rm -rf` cleanup of legacy global Node 16, `yarn`, and `taiko` under `/usr/local/` (does not block builds since `~/.zshenv` prepends nvm `v24.14.1`).
+
+### 2026-11-14 — Usernotes (`N`-Tag) Popup Latency Optimization
+
+- Created PR branch `perf/usernotes-popup-latency` from `origin/main` (`328e06e6`) and implemented the 4-commit optimization roadmap:
+  - `078d527b` (`perf(usernotes): skip purifyObject walk over inflated usernotes tree`): Scoped `purifyObject` in `readNxgUsernotes` to `notes.types` only (`extension/data/modules/shared/usernotes/moduleapi.ts`, `moduleapi.test.ts`).
+  - `d81f7178` (`perf(usernotes): open AddUserNotePopup without waiting on thing or mod lookups`): Removed blocking `getApiThingInfo` and `getModeratorListResult` awaits before opening [`AddUserNotePopup.tsx`](extension/data/modules/usernotes/components/AddUserNotePopup.tsx) from [`dom.tsx`](extension/data/modules/usernotes/dom.tsx), passing `resolveTargetIsMod` and `resolveThingContext`, guarding user-edited ban messages with `banMessageDirtyRef`, and adding tests in [`AddUserNotePopup.test.tsx`](extension/data/modules/usernotes/components/AddUserNotePopup.test.tsx).
+  - `ac1f3897` (`perf(usernotes): avoid forced refresh on mount and parallelize compat reads`): Switched popup mount to cache-first `getUserNotes(subreddit,)` (`onRefreshNotes` only when `!cachedSubState`), parallelized `readShardedUsernotes` + `readLegacyUsersForDiff` via `Promise.all`, and short-circuited `diffLegacyNotes` in [`reconcile.ts`](extension/data/util/wiki/schemas/usernotes/reconcile.ts) before `structuredClone(nxgUsers,)` when `computeLegacyDiff` has no adds or archived keys.
+  - `194bf524` (`perf(usernotes): skip redundant wiki re-read in updateUserNotes save`): Added `alreadyReconciled` parameter to `doSaveUserNotes` (set `true` from `doUpdateUserNotes`) to eliminate the second shard/legacy read cycle on compat-on saves.
+- Verified all checks on `perf/usernotes-popup-latency` (`Node v24.14.1`): `npm run typecheck`, `npm run lint`, `npm run fmt`, `npm run lint:css`, `npm run lint:params` (0 violations), `npm run test` (204 files / 2650 tests), and `npm run build:chrome`.
+- Pushed `perf/usernotes-popup-latency` (`194bf524`) to `origin/perf/usernotes-popup-latency`, switched `origin` and `upstream` remotes to SSH (`git@github.com:...`), and checked out local `main`.
