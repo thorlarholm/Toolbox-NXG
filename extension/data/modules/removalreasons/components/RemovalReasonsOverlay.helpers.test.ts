@@ -6,6 +6,8 @@ import {
 	composeReasonText,
 	describeLiteralField,
 	getDomainLink,
+	quoteBreak,
+	quoteSeparator,
 	type RenderedReason,
 	renderReasonHtml,
 	requiredFieldsError,
@@ -249,6 +251,19 @@ describe('renderReasonHtml', () => {
 	})
 })
 
+describe('quoteSeparator', () => {
+	it('breaks only between a closing quote and an opening quote', () => {
+		expect(quoteSeparator('Hi\n\n> quoted header\n\n', '\n> reason',),).toBe(quoteBreak,)
+		expect(quoteSeparator('> quote', 'plain',),).toBe('',)
+		expect(quoteSeparator('plain', '> quote',),).toBe('',)
+		expect(quoteSeparator('', '> quote',),).toBe('',)
+	})
+
+	it('ignores a > that is indented as code', () => {
+		expect(quoteSeparator('> quote', '    > code',),).toBe('',)
+	})
+})
+
 describe('composeReasonText', () => {
 	function rendered (
 		id: string,
@@ -356,6 +371,33 @@ describe('composeReasonText', () => {
 			{id: 'persist-a', text: 'Choose because end', title: 'Rule 1',},
 			{id: 'persist-b', text: 'edited second',},
 		],)
+	})
+
+	it('keeps quoted reasons as separate quotes', () => {
+		const result = composeReasonText(
+			[rendered('a', '> First rule\n\n',), rendered('b', '> Second rule\n\n',),],
+			() => undefined,
+			() => [],
+		)
+		expect(result.reason,).toBe(`> First rule\n\n${quoteBreak}> Second rule\n\n`,)
+	})
+
+	it('adds no break between reasons that are not both quoted', () => {
+		const result = composeReasonText(
+			[rendered('a', '> First rule\n\n',), rendered('b', 'Plain rule\n\n',), rendered('c', '> Third\n\n',),],
+			() => undefined,
+			() => [],
+		)
+		expect(result.reason,).toBe('> First rule\n\nPlain rule\n\n> Third\n\n',)
+	})
+
+	it('breaks the quote before an edited reason that is also quoted', () => {
+		const result = composeReasonText(
+			[rendered('a', '> First rule\n\n',), rendered('b', 'original',),],
+			(id,) => (id === 'b' ? '> Edited rule' : undefined),
+			() => [],
+		)
+		expect(result.reason,).toBe(`> First rule\n\n${quoteBreak}> Edited rule\n\n`,)
 	})
 
 	it('falls back to the positional id in a piece when a reason has no persistent id', () => {

@@ -75,6 +75,7 @@ import {
 	getDomainLink,
 	missingFieldClass,
 	noReasonError,
+	quoteSeparator,
 	type ReasonType,
 	removeError,
 	type RenderedReason,
@@ -941,8 +942,12 @@ export function RemovalReasonsOverlay ({
 		}
 
 		let reason = composed.reason
-		if (includeHeader && data.header) { reason = `${data.header}\n\n${reason}` }
-		if (includeFooter && data.footer) { reason += `\n\n${data.footer}` }
+		if (includeHeader && data.header) {
+			reason = `${data.header}\n\n${quoteSeparator(data.header, reason,)}${reason}`
+		}
+		if (includeFooter && data.footer) {
+			reason += `\n\n${quoteSeparator(reason, data.footer,)}${data.footer}`
+		}
 		reason = replaceTokens(tokenSource, reason,).trim()
 
 		// Selected reason titles, for review display (omit when none have a title).

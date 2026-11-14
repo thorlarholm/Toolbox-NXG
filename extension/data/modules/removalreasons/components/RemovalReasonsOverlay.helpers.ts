@@ -538,6 +538,28 @@ export interface UnfilledReason {
 	positions: number[]
 }
 
+/** Matches a markdown line that opens or continues a blockquote. */
+const quoteLine = /^ {0,3}>/
+
+/**
+ * Reddit's own editor writes this zero-width-space paragraph for an empty line. It renders as
+ * nothing on old Reddit and shreddit, but is enough to end a blockquote.
+ */
+export const quoteBreak = '&#x200B;\n\n'
+
+/**
+ * Returns the text to put between two markdown blocks so a quote ending `before` stays separate
+ * from a quote opening `after`. Reddit treats a blank line between two `>` blocks as one
+ * continuous quote, so picking several quoted reasons sent them as one merged quote.
+ * @param before The text already composed.
+ * @param after The block about to be appended.
+ */
+export function quoteSeparator (before: string, after: string,): string {
+	const lastLine = before.trimEnd().split('\n',).at(-1,) ?? ''
+	const firstLine = after.split('\n',).find((line,) => line.trim() !== '') ?? ''
+	return quoteLine.test(lastLine,) && quoteLine.test(firstLine,) ? quoteBreak : ''
+}
+
 /**
  * Composes the final reason markdown and flair values from the selected reasons,
  * in display order. Each interactive token is substituted with the corresponding
@@ -580,10 +602,10 @@ export function composeReasonText (
 			// the editor may have typed raw legacy HTML, which the overrideHtml render also
 			// heals - both must parse the same text for tokens and controls to line up 1:1.
 			body = substituteTokenValues(text, values,)
-			reason += `${body}\n\n`
+			reason += `${quoteSeparator(reason, body,)}${body}\n\n`
 		} else {
 			body = substituteTokenValues(text, values,)
-			reason += body
+			reason += `${quoteSeparator(reason, body,)}${body}`
 		}
 		// Capture the resolved body keyed by the persistent reason id, so Edit & Accept
 		// can re-seed the overlay against the (possibly edited) current config.
