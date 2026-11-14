@@ -186,7 +186,11 @@ async function readLegacyUsernotes (subreddit: string,): Promise<UserNotesData |
 async function readNxgUsernotes (subreddit: string, reconcile: boolean,): Promise<UserNotesData | null> {
 	const result = await readShardedUsernotes(subreddit,)
 	let notes = result.kind === 'no_page' ? null : result.notes
-	if (notes) { purifyObject(notes,) }
+	// All usernote fields (note text, mod, type, links) render as React text
+	// nodes or attributes — never dangerouslySetInnerHTML — so walking every
+	// inflated user/note with purifyObject is pure O(total notes) overhead and
+	// strips literal angle-bracket text. Only sanitize the small manifest types list.
+	if (notes?.types) { purifyObject(notes.types,) }
 
 	if (reconcile) {
 		// NXG may have no usernotes yet while 6.x mods are writing the legacy

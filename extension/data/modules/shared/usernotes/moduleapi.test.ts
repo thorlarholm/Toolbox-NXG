@@ -69,6 +69,7 @@ vi.mock('../../../util/wiki/wikiPaths', () => ({
 
 import {postToWiki, readFromWiki,} from '../../../api/resources/wiki'
 import type {WikiReadResult,} from '../../../api/resources/wiki'
+import {purifyObject,} from '../../../util/data/purify'
 import {nowInSeconds,} from '../../../util/data/time'
 import {getCache, setCache,} from '../../../util/persistence/cache'
 import {encodeNotesShard, encodeUsernotesV6,} from '../../../util/wiki/schemas/usernotes/codec'
@@ -196,6 +197,9 @@ describe('getUserNotes', () => {
 		expect(result.users['testuser']!.notes[0]!.note,).toBe('note for testuser',)
 		// Types come from the manifest, not the config.
 		expect(result.types,).toEqual(singleShardManifest().types,)
+		// Only the small manifest types list is purified; notes/users are not walked.
+		expect(purifyObject,).toHaveBeenCalledTimes(1,)
+		expect(purifyObject,).toHaveBeenCalledWith(result.types,)
 		// The legacy page is never consulted when compat is off.
 		expect(vi.mocked(readFromWiki,).mock.calls.some((call,) => call[1] === 'usernotes'),).toBe(false,)
 	})
