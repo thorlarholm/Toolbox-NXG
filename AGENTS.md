@@ -14,6 +14,7 @@
   - `/Users/thor/Projects/Toolbox-NXG-reference/reddit-moderator-toolbox` (`https://github.com/toolbox-team/reddit-moderator-toolbox.git`)
 - **Why Outside the Repo**: Moved out of `./reference/` because ESLint 9 flat config (`eslint .` in `npm run lint`) does not honor `.gitignore` and otherwise lints inside local clones.
 - **Do Not Read Without Instruction**: Never read any files inside `/Users/thor/Projects/Toolbox-NXG-reference/` unless explicitly instructed to do so by the user.
+- **Temporary Files (`./scratch/`)**: Store temporary files and debug logs in project-local [`scratch/`](scratch/.gitkeep) instead of `/tmp`. Never leave `.js`/`.ts`/`.tsx` files in `./scratch/` during `npm run lint` since `eslint .` does not honor `.gitignore`.
 
 ## 3. Contribution Workflow & Pull Request Hygiene
 
