@@ -61,3 +61,10 @@
   - `194bf524` (`perf(usernotes): skip redundant wiki re-read in updateUserNotes save`): Added `alreadyReconciled` parameter to `doSaveUserNotes` (set `true` from `doUpdateUserNotes`) to eliminate the second shard/legacy read cycle on compat-on saves.
 - Verified all checks on `perf/usernotes-popup-latency` (`Node v24.14.1`): `npm run typecheck`, `npm run lint`, `npm run fmt`, `npm run lint:css`, `npm run lint:params` (0 violations), `npm run test` (204 files / 2650 tests), and `npm run build:chrome`.
 - Pushed `perf/usernotes-popup-latency` (`194bf524`) to `origin/perf/usernotes-popup-latency`, switched `origin` and `upstream` remotes to SSH (`git@github.com:...`), and checked out local `main`.
+
+### 2026-11-14 — Chrome Build Verification, DevTools MCP Findings & Scratch Policy
+
+- Verified [`build/chrome/`](build/chrome/manifest.json) (`v8.0.0.14`, built `2026-11-14 15:21`) already compiles in all 4 `perf/usernotes-popup-latency` commits (`078d527b`, `d81f7178`, `ac1f3897`, `194bf524`) while local `HEAD` stays on workspace-only `main` (do not run `npm run build:chrome` on `main` or it overwrites the PR build).
+- Tested `chrome-devtools` MCP `--autoConnect --categoryExtensions` against active Google Chrome (`157.0.8103.51`): `list_pages` (`1090+` tabs, `/r/DKTEST/` at `pageId: 1216`) and `list_extensions` (`dnijncinfnoomolcdgbeoepaeoaaphhh`, `v8.0.0.14` Enabled) succeeded, but `select_page` timed out after 3 minutes (`context deadline exceeded`) and `--autoConnect` caused UI freezes/CPU spikes across 1,090+ tabs.
+- Removed `--autoConnect` and `--logFile` from `~/.gemini/config/mcp_config.json` and disabled Chrome remote debugging; keep automated `chrome-devtools` MCP checks on the isolated single-tab profile instead.
+- Added [`scratch/.gitkeep`](scratch/.gitkeep) (gitignoring `/scratch/*` except `!/scratch/.gitkeep` on local `main`) and standardized on project-local `./scratch/` instead of `/tmp` for temporary files.
