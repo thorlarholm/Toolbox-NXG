@@ -21,8 +21,8 @@ import {
 import {
 	applyLegacyDiff,
 	computeLegacyDiff,
+	diffLegacyNotes,
 	readLegacyUsersForDiff,
-	reconcileFromLegacy,
 } from '../../../util/wiki/schemas/usernotes/reconcile'
 import {
 	AUTO_ARCHIVER,
@@ -184,7 +184,10 @@ async function readLegacyUsernotes (subreddit: string,): Promise<UserNotesData |
  * @returns The merged inflated data, or `null` when no notes exist anywhere.
  */
 async function readNxgUsernotes (subreddit: string, reconcile: boolean,): Promise<UserNotesData | null> {
-	const result = await readShardedUsernotes(subreddit,)
+	const [result, legacyUsers,] = await Promise.all([
+		readShardedUsernotes(subreddit,),
+		reconcile ? readLegacyUsersForDiff(subreddit,) : Promise.resolve(null,),
+	],)
 	let notes = result.kind === 'no_page' ? null : result.notes
 	// All usernote fields (note text, mod, type, links) render as React text
 	// nodes or attributes — never dangerouslySetInnerHTML — so walking every
@@ -192,13 +195,14 @@ async function readNxgUsernotes (subreddit: string, reconcile: boolean,): Promis
 	// strips literal angle-bracket text. Only sanitize the small manifest types list.
 	if (notes?.types) { purifyObject(notes.types,) }
 
-	if (reconcile) {
+	if (reconcile && legacyUsers !== null) {
 		// NXG may have no usernotes yet while 6.x mods are writing the legacy
 		// page (e.g. notes created after a notes-less migration); reconcile
 		// from an empty dataset so those flow in.
-		const reconciled = await reconcileFromLegacy(subreddit, notes ?? {ver: notesSchema, users: {},},)
-		if (notes === null && !reconciled.changed) { return null }
-		notes = reconciled.notes
+		const base = notes ?? {ver: notesSchema, users: {},}
+		const {users, changed,} = diffLegacyNotes(base.users, legacyUsers,)
+		if (notes === null && !changed) { return null }
+		notes = changed ? {...base, users,} : base
 	}
 	if (notes === null) { return null }
 

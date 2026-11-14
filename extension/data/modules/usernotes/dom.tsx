@@ -358,11 +358,15 @@ export function createNotesDisplay (
 			banTokenInfo: banTokens,
 			defaultBanMessage: resolveBanDefaults(config?.banMacros, banTokens,).message,
 			requireBanMessage: config?.requireBanMessage === true,
-			onRefreshNotes: async () => {
-				const notesData = await getUserNotes(subreddit, true,)
-				publishSubredditNotes(subreddit, {notes: notesData, colors,},)
-				return toExistingNotes(notesData,)
-			},
+			// If page-load processing hasn't populated the in-memory store yet, hydrate
+			// from the noteCache/wiki without bypassing cache on every click.
+			...(!cachedSubState && {
+				onRefreshNotes: async () => {
+					const notesData = await getUserNotes(subreddit,)
+					publishSubredditNotes(subreddit, {notes: notesData, colors,},)
+					return toExistingNotes(notesData,)
+				},
+			}),
 			onSave: async ({note, type, includeLink, includeMessageLink, triggerBan, banMessage,},) => {
 				if (!user || !subreddit) { return }
 				const resolvedThing = (includeLink || triggerBan) && thingPromise ? await thingPromise : undefined

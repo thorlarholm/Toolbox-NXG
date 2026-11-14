@@ -149,17 +149,21 @@ export function applyLegacyDiff (users: Record<string, UsernotesUser>, ops: Lega
 }
 
 /**
- * Folds 6.x edits from the legacy page's user map into a copy of the
- * canonical NXG user map. Pure.
- * @returns The reconciled user map (a fresh object; inputs are not mutated)
- *   and whether anything changed.
+ * Folds 6.x edits from the legacy page's user map into the canonical NXG user
+ * map without mutating inputs.
+ * @returns The reconciled user map (the same object when nothing changed,
+ *   otherwise a fresh copy) and whether anything changed.
  */
 export function diffLegacyNotes (
 	nxgUsers: Record<string, UsernotesUser>,
 	legacyUsers: Record<string, UsernotesUser>,
 ): {users: Record<string, UsernotesUser>; changed: boolean} {
+	const ops = computeLegacyDiff(nxgUsers, legacyUsers,)
+	if (ops.adds.length === 0 && ops.archivedKeys.size === 0) {
+		return {users: nxgUsers, changed: false,}
+	}
 	const users = structuredClone(nxgUsers,)
-	const changed = applyLegacyDiff(users, computeLegacyDiff(nxgUsers, legacyUsers,),)
+	const changed = applyLegacyDiff(users, ops,)
 	return {users, changed,}
 }
 
