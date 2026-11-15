@@ -45,7 +45,8 @@ function makeInitialState (props: Props,): MatrixState {
 		hideZeroColumns: false,
 		hideZeroMods: false,
 		modTimeline: {},
-		timelineDays: 0,
+		timelineStartDay: null,
+		timelineEndDay: null,
 		showSparklines: false,
 	}
 }
@@ -99,7 +100,6 @@ function buildCSV (state: MatrixState, sortedMods: string[],): string {
 function reducer (state: MatrixState, action: MatrixAction,): MatrixState {
 	switch (action.type) {
 		case 'SET_DATE_RANGE': {
-			const timelineDays = Math.ceil((action.maxDate - action.minDate) / 86400000,)
 			return {
 				...state,
 				minDate: action.minDate,
@@ -110,7 +110,8 @@ function reducer (state: MatrixState, action: MatrixAction,): MatrixState {
 				total: 0,
 				error: false,
 				modTimeline: {},
-				timelineDays,
+				timelineStartDay: null,
+				timelineEndDay: null,
 			}
 		}
 
@@ -120,8 +121,9 @@ function reducer (state: MatrixState, action: MatrixAction,): MatrixState {
 		case 'PROCESS_BATCH': {
 			const mods = {...state.subredditModerators,}
 			const timeline = {...state.modTimeline,}
-			let {firstEntry, lastEntry, total,} = state
-			const {minDate,} = state
+			let {firstEntry, lastEntry, total, timelineStartDay, timelineEndDay,} = state
+			const copiedMods = new Set<string>()
+			const copiedActions = new Set<string>()
 
 			for (const entry of action.entries) {
 				if (!mods[entry.mod]) { mods[entry.mod] = {} }
@@ -130,19 +132,36 @@ function reducer (state: MatrixState, action: MatrixAction,): MatrixState {
 				if (firstEntry == null) { firstEntry = entry }
 				lastEntry = entry
 
-				if (minDate != null) {
-					const dayIndex = Math.min(
-						Math.floor((entry.created_utc * 1000 - minDate) / 86400000,),
-						state.timelineDays - 1,
-					)
-					if (dayIndex >= 0) {
-						if (!timeline[entry.mod]) { timeline[entry.mod] = [] }
-						timeline[entry.mod]![dayIndex] = (timeline[entry.mod]![dayIndex] ?? 0) + 1
-					}
+				// Sparkline axis spans the days the data actually covers, not the requested range:
+				// Reddit only keeps ~90 days of mod log, so a wide range would leave most of it empty.
+				const day = Math.floor(entry.created_utc / 86400,)
+				if (timelineStartDay == null || day < timelineStartDay) { timelineStartDay = day }
+				if (timelineEndDay == null || day > timelineEndDay) { timelineEndDay = day }
+				// Copy each nested map once per batch so earlier state objects stay untouched.
+				const actionKey = `${entry.mod}\u0000${entry.action}`
+				if (!copiedMods.has(entry.mod,)) {
+					timeline[entry.mod] = {...timeline[entry.mod],}
+					copiedMods.add(entry.mod,)
 				}
+				const modDays = timeline[entry.mod]!
+				if (!copiedActions.has(actionKey,)) {
+					modDays[entry.action] = {...modDays[entry.action],}
+					copiedActions.add(actionKey,)
+				}
+				const actionDays = modDays[entry.action]!
+				actionDays[day] = (actionDays[day] ?? 0) + 1
 			}
 
-			return {...state, subredditModerators: mods, modTimeline: timeline, firstEntry, lastEntry, total,}
+			return {
+				...state,
+				subredditModerators: mods,
+				modTimeline: timeline,
+				firstEntry,
+				lastEntry,
+				total,
+				timelineStartDay,
+				timelineEndDay,
+			}
 		}
 
 		case 'FINISH_FETCH':
@@ -162,6 +181,8 @@ function reducer (state: MatrixState, action: MatrixAction,): MatrixState {
 				total: 0,
 				error: false,
 				modTimeline: {},
+				timelineStartDay: null,
+				timelineEndDay: null,
 			}
 
 		case 'SET_MOD_FILTER':

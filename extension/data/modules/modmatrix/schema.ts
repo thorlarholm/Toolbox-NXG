@@ -60,10 +60,15 @@ export interface MatrixState {
 	highlightThreshold: number
 	hideZeroColumns: boolean
 	hideZeroMods: boolean
-	/** Per-moderator daily action counts indexed by day offset from `minDate`. */
-	modTimeline: Record<string, number[]>
-	/** Number of days in the timeline, computed from the date range. */
-	timelineDays: number
+	/**
+	 * Daily action counts per moderator and action code, keyed by absolute UTC day number
+	 * (`Math.floor(created_utc / 86400)`), so sparklines can be summed over only the visible actions.
+	 */
+	modTimeline: Record<string, Record<string, Record<number, number>>>
+	/** Earliest UTC day number seen in the fetched entries, or `null` when nothing has loaded. */
+	timelineStartDay: number | null
+	/** Latest UTC day number seen in the fetched entries, or `null` when nothing has loaded. */
+	timelineEndDay: number | null
 	showSparklines: boolean
 }
 

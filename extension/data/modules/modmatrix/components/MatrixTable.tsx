@@ -148,7 +148,8 @@ export function MatrixTable ({state, sortedMods, onSort,}: Props,) {
 		hideZeroMods,
 		showSparklines,
 		modTimeline,
-		timelineDays,
+		timelineStartDay,
+		timelineEndDay,
 	} = state
 
 	const [expandedGroups, setExpandedGroups,] = useState<Set<string>>(new Set(),)
@@ -221,6 +222,29 @@ export function MatrixTable ({state, sortedMods, onSort,}: Props,) {
 		}
 		return zero
 	}, [hideZeroMods, sortedMods, modFilter, visibleActionCodes, state.subredditModerators,],)
+
+	// Per-mod daily totals over the visible action columns only, spanning the days the data covers.
+	const sparklineCounts = useMemo(() => {
+		const result = new Map<string, number[]>()
+		if (!showSparklines || timelineStartDay == null || timelineEndDay == null) { return result }
+		const length = timelineEndDay - timelineStartDay + 1
+		for (const mod of sortedMods) {
+			const counts = new Array<number>(length,).fill(0,)
+			const modDays = modTimeline[mod]
+			if (modDays) {
+				for (const code of visibleActionCodes) {
+					const days = modDays[code]
+					if (!days) { continue }
+					for (const [day, n,] of Object.entries(days,)) {
+						const i = Number(day,) - timelineStartDay
+						counts[i] = (counts[i] ?? 0) + n
+					}
+				}
+			}
+			result.set(mod, counts,)
+		}
+		return result
+	}, [showSparklines, timelineStartDay, timelineEndDay, sortedMods, modTimeline, visibleActionCodes,],)
 
 	const anyExpanded = visibleGroups.some((g,) => expandedGroups.has(g.label,))
 
@@ -521,12 +545,7 @@ export function MatrixTable ({state, sortedMods, onSort,}: Props,) {
 								)}
 								{showSparklines && (
 									<td className={css.sparklineCol}>
-										<Sparkline
-											counts={Array.from(
-												{length: timelineDays,},
-												(_, i,) => modTimeline[mod]?.[i] ?? 0,
-											)}
-										/>
+										<Sparkline counts={sparklineCounts.get(mod,) ?? []} />
 									</td>
 								)}
 							</tr>
