@@ -34,8 +34,13 @@ export function AnnouncementManagerOverlay ({onClose,}: Props,) {
 
 	const load = useCallback(async () => {
 		setState({status: 'loading',},)
-		const result = await getAnnouncements()
-		setState(result.ok ? {status: 'ready', notes: result.notes,} : {status: 'error', reason: result.reason,},)
+		try {
+			const result = await getAnnouncements()
+			setState(result.ok ? {status: 'ready', notes: result.notes,} : {status: 'error', reason: result.reason,},)
+		} catch (error: unknown) {
+			// A thrown read (not just a reported failure) must not leave the list on "Loading..." forever.
+			setState({status: 'error', reason: String(error,),},)
+		}
 	}, [],)
 
 	useEffect(() => {
