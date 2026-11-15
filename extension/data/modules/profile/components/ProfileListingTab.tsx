@@ -154,9 +154,16 @@ export function ListingTab ({
 		) {
 			return
 		}
+		// A slower response for a previous subreddit must not overwrite the current one's.
+		let current = true
 		getBanState(state.searchSubreddit, user,).then((ban,) => {
-			setSubBanState(ban ?? null,)
-		},).catch(() => setSubBanState(null,))
+			if (current) { setSubBanState(ban ?? null,) }
+		},).catch(() => {
+			if (current) { setSubBanState(null,) }
+		},)
+		return () => {
+			current = false
+		}
 	}, [state.searchSubreddit, user, modSubsList,],)
 
 	async function appendItems (items: ProfileEntry[],) {
