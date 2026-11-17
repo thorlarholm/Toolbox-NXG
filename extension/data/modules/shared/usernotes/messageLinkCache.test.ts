@@ -2,7 +2,13 @@
 
 import {beforeEach, describe, expect, it,} from 'vitest'
 
-import {clearMessageLinks, getMessageLink, normalizePermalinkKey, rememberMessageLink,} from './messageLinkCache'
+import {
+	clearMessageLinks,
+	getMessageLink,
+	hasMessageLinks,
+	normalizePermalinkKey,
+	rememberMessageLink,
+} from './messageLinkCache'
 
 const conversation = 'https://www.reddit.com/mail/perma/abc123'
 
@@ -61,5 +67,14 @@ describe('rememberMessageLink / getMessageLink', () => {
 		rememberMessageLink(['/r/sub/comments/abc/',], '',)
 
 		expect(getMessageLink('/r/sub/comments/abc/',),).toBeUndefined()
+		expect(hasMessageLinks(),).toBe(false,)
+	})
+
+	it('reports whether any message links have been recorded in this session', () => {
+		expect(hasMessageLinks(),).toBe(false,)
+		rememberMessageLink(['/r/sub/comments/abc/',], conversation,)
+		expect(hasMessageLinks(),).toBe(true,)
+		clearMessageLinks()
+		expect(hasMessageLinks(),).toBe(false,)
 	})
 })

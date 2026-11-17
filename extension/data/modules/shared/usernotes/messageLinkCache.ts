@@ -63,6 +63,14 @@ export function getMessageLink (permalink: string,): string | undefined {
 	return key ? messageLinks.get(key,) : undefined
 }
 
+/**
+ * Returns `true` if any removal message link has been recorded in this page
+ * session, so callers know whether an async thing lookup could yield one.
+ */
+export function hasMessageLinks (): boolean {
+	return messageLinks.size > 0
+}
+
 /** Clears all cached message links (for tests). */
 export function clearMessageLinks () {
 	messageLinks.clear()
