@@ -200,8 +200,62 @@ describe('getUserNotes', () => {
 		// Only the small manifest types list is purified; notes/users are not walked.
 		expect(purifyObject,).toHaveBeenCalledTimes(1,)
 		expect(purifyObject,).toHaveBeenCalledWith(result.types,)
+		expect(purifyObject,).not.toHaveBeenCalledWith(result,)
 		// The legacy page is never consulted when compat is off.
 		expect(vi.mocked(readFromWiki,).mock.calls.some((call,) => call[1] === 'usernotes'),).toBe(false,)
+	})
+
+	it('preserves literal angle-bracket note text in sharded usernotes without purifying users', async () => {
+		mockLayout('nxg', false,)
+		const angleUser = makeUser('angleuser', 'used <script> & <3 in title',)
+		mockWikiPages({
+			[NXG_PAGE]: JSON.stringify(singleShardManifest(),),
+			[`${NXG_PAGE}/s1-00000000`]: JSON.stringify(encodeNotesShard({angleuser: angleUser,},),),
+		},)
+
+		const result = await getUserNotes('sub',)
+
+		expect(result.users['angleuser']!.notes[0]!.note,).toBe('used <script> & <3 in title',)
+		expect(purifyObject,).toHaveBeenCalledTimes(1,)
+		expect(purifyObject,).toHaveBeenCalledWith(result.types,)
+	})
+
+	it('compat-on with no NXG page yet: folds legacy notes and seeds types, or throws no_page when legacy is empty', async () => {
+		mockLayout('nxg', true,)
+		// Empty legacy page -> changed is false -> throws no_page.
+		mockWikiPages({
+			usernotes: JSON.stringify(encodeUsernotesV6({ver: 6, users: {},},),),
+		},)
+		await expect(getUserNotes('sub',),).rejects.toThrow('no_page',)
+
+		vi.mocked(getCache,).mockResolvedValue([],)
+		// Non-empty legacy page -> folded in and types seeded.
+		const legacyUser = makeUser('legacyonly', 'from 6.x',)
+		mockWikiPages({
+			usernotes: JSON.stringify(encodeUsernotesV6({ver: 6, users: {legacyonly: legacyUser,},},),),
+			toolbox: JSON.stringify({ver: 1, usernoteColors: [{key: 'botban', text: 'Bot Ban', color: '#111111',},],},),
+		},)
+		const result = await getUserNotes('sub',)
+		expect(result.users['legacyonly']!.notes[0]!.note,).toBe('from 6.x',)
+		expect(result.types?.some((t,) => t.key === 'botban'),).toBe(true,)
+	})
+
+	it('compat-on: aborts getUserNotes if reading the legacy mirror fails during parallel read', async () => {
+		mockLayout('nxg', true,)
+		vi.mocked(readFromWiki,).mockImplementation(async (_sub: string, page: string,) => {
+			if (page === NXG_PAGE) {
+				return {ok: true, data: JSON.stringify(singleShardManifest(),),} as WikiReadResult
+			}
+			if (page === `${NXG_PAGE}/s1-00000000`) {
+				return {
+					ok: true,
+					data: JSON.stringify(encodeNotesShard({testuser: makeUser('testuser',),},),),
+				} as WikiReadResult
+			}
+			return {ok: false, reason: 'network_error',} as WikiReadResult
+		},)
+
+		await expect(getUserNotes('sub',),).rejects.toThrow(/could not read the legacy usernotes page/,)
 	})
 
 	it('repairs placeholder types in the background, writing only the manifest', async () => {
@@ -965,6 +1019,32 @@ describe('updateUserNotes', () => {
 		expect(readPages.filter((p,) => p === NXG_PAGE),).toHaveLength(1,)
 		expect(readPages.filter((p,) => p === `${NXG_PAGE}/s1-00000000`),).toHaveLength(1,)
 		expect(readPages.filter((p,) => p === 'usernotes'),).toHaveLength(1,)
+	})
+
+	it('compat-on with no pages yet: creates the first note cleanly without a redundant read', async () => {
+		mockLayout('nxg', true,)
+		mockWikiPages({},)
+
+		const saved = await updateUserNotes('sub', (fresh,) =>
+			applyUserNoteMutation(fresh, 'firstuser', {
+				change: 'add',
+				note: {note: 'first note', time: 1700000002, mod: 'me', type: 'spam', link: '',},
+			},),)
+
+		expect(saved?.users['firstuser']!.notes[0]!.note,).toBe('first note',)
+		const readPages = vi.mocked(readFromWiki,).mock.calls.map((call,) => call[1])
+		// NXG_PAGE is read once in getUserNotes and once by resolveWriteBase (no sessionState on no_page).
+		expect(readPages.filter((p,) => p === NXG_PAGE),).toHaveLength(2,)
+		// Legacy usernotes mirror is only read once (in getUserNotes, skipped in doSaveUserNotes).
+		expect(readPages.filter((p,) => p === 'usernotes'),).toHaveLength(1,)
+		expect(postToWiki,).toHaveBeenCalledWith(
+			'sub',
+			'usernotes',
+			expect.objectContaining({ver: 6,},),
+			expect.any(String,),
+			true,
+			false,
+		)
 	})
 })
 

@@ -74,6 +74,7 @@ describe('diffLegacyNotes', () => {
 		const result = diffLegacyNotes(nxg, legacy,)
 
 		expect(result.changed,).toBe(false,)
+		expect(result.users,).toBe(nxg,)
 		expect(result.users,).toEqual(nxg,)
 	})
 
