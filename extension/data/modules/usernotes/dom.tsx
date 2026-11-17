@@ -29,6 +29,7 @@ import {getApiThingInfo, type ThingInfo,} from '../../util/reddit/thingInfo'
 import {drawPosition,} from '../../util/ui/drawPosition'
 import {navigateToSubredditPage, reloadPage,} from '../../util/ui/navigation'
 import {
+	defaultUsernoteTypes,
 	type ExistingNote,
 	isNoteActive,
 	notesMaxSchema,
@@ -36,6 +37,7 @@ import {
 	notesSchema,
 	type PruneOptions,
 	type PruneProgress,
+	type UserNoteColor,
 	type UserNoteEntry,
 	type UserNotesData,
 } from '../../util/wiki/schemas/usernotes/schema'
@@ -46,7 +48,7 @@ import {resolveWikiLayout,} from '../../util/wiki/wikiPaths'
 import {getConfig,} from '../config/moduleapi'
 import {banTokenInfo, resolveBanDefaults,} from '../shared/banMacros/schema'
 import {proposeOrBan,} from '../shared/proposals/gateway'
-import {getMessageLink,} from '../shared/usernotes/messageLinkCache'
+import {getMessageLink, hasMessageLinks,} from '../shared/usernotes/messageLinkCache'
 import {
 	findSubredditColor,
 	getSubredditColors,
@@ -302,8 +304,21 @@ export function createNotesDisplay (
 			.catch(() => false)
 
 		const cachedSubState = getSubredditNotes(subreddit,)
-		const [colors, layout, currentUser, config,] = await Promise.all([
-			cachedSubState ? Promise.resolve(cachedSubState.colors,) : getSubredditColors(subreddit,),
+		const loadInitialSubState = async (): Promise<{notes: UserNotesData | undefined; colors: UserNoteColor[]}> => {
+			if (cachedSubState) {
+				return {notes: cachedSubState.notes, colors: cachedSubState.colors,}
+			}
+			try {
+				const notesData = await getUserNotes(subreddit,)
+				const subColors = notesData.types?.length ? notesData.types : defaultUsernoteTypes
+				publishSubredditNotes(subreddit, {notes: notesData, colors: subColors,},)
+				return {notes: notesData, colors: subColors,}
+			} catch {
+				return {notes: undefined, colors: await getSubredditColors(subreddit,),}
+			}
+		}
+		const [{notes: initialNotesData, colors,}, layout, currentUser, config,] = await Promise.all([
+			loadInitialSubState(),
 			resolveWikiLayout(subreddit,),
 			getCurrentUser().catch(() => ''),
 			getConfig(subreddit,).catch(() => undefined),
@@ -323,7 +338,7 @@ export function createNotesDisplay (
 				...(n.messageLink !== undefined && {messageLink: n.messageLink,}),
 				...(n.archived !== undefined && {archived: n.archived,}),
 			}))
-		const initialNotes = toExistingNotes(cachedSubState?.notes ?? {ver: notesSchema, users: {},},)
+		const initialNotes = toExistingNotes(initialNotesData ?? {ver: notesSchema, users: {},},)
 		// If a removal earlier this page session sent a modmail for the linked
 		// thing, offer to attach that conversation to the note as well.
 		const availableMessageLink = link ? getMessageLink(link,) : undefined
@@ -339,6 +354,7 @@ export function createNotesDisplay (
 			findColor: (key: string,) => findSubredditColor(colors, key,),
 			resolveTargetIsMod: () => modCheckPromise,
 			...(thingPromise && {
+				mayHaveMessageLink: hasMessageLinks(),
 				resolveThingContext: async () => {
 					const resolved = await thingPromise
 					if (!resolved) { return undefined }
@@ -358,21 +374,36 @@ export function createNotesDisplay (
 			banTokenInfo: banTokens,
 			defaultBanMessage: resolveBanDefaults(config?.banMacros, banTokens,).message,
 			requireBanMessage: config?.requireBanMessage === true,
-			// If page-load processing hasn't populated the in-memory store yet, hydrate
-			// from the noteCache/wiki without bypassing cache on every click.
-			...(!cachedSubState && {
+			// When mounted from the in-memory store, run a cache-respecting check in
+			// the background so cross-tab noteCache updates or expired TTLs refresh
+			// without bypassing cache on every click.
+			...(cachedSubState && {
 				onRefreshNotes: async () => {
-					const notesData = await getUserNotes(subreddit,)
+					let notesData: UserNotesData
+					try {
+						notesData = await getUserNotes(subreddit,)
+					} catch (error: unknown) {
+						if (
+							error instanceof Error
+							&& (error.message === 'no_page' || error.message === 'found in noNotes cache')
+						) {
+							return undefined
+						}
+						throw error
+					}
+					if (notesData === cachedSubState.notes) { return undefined }
 					publishSubredditNotes(subreddit, {notes: notesData, colors,},)
 					return toExistingNotes(notesData,)
 				},
 			}),
 			onSave: async ({note, type, includeLink, includeMessageLink, triggerBan, banMessage,},) => {
 				if (!user || !subreddit) { return }
-				const resolvedThing = (includeLink || triggerBan) && thingPromise ? await thingPromise : undefined
-				const resolvedLink = link || resolvedThing?.permalink || ''
-				const resolvedMessageLink = availableMessageLink
-					?? (resolvedLink ? getMessageLink(resolvedLink,) : undefined)
+				const resolvedThing = (includeLink || includeMessageLink || triggerBan) && thingPromise
+					? await thingPromise
+					: undefined
+				const resolvedLink = resolvedThing?.permalink || link
+				const resolvedMessageLink = (resolvedLink ? getMessageLink(resolvedLink,) : undefined)
+					?? availableMessageLink
 				const time = nowInSeconds()
 				const mod = await getCurrentUser()
 				const messageLink = includeMessageLink ? resolvedMessageLink : undefined
