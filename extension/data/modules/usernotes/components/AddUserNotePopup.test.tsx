@@ -527,4 +527,136 @@ describe('AddUserNotePopup', () => {
 		expect(textarea.value,).toBe('custom mod message',)
 		expect(host.textContent,).toContain('Include removal message link',)
 	})
+
+	it('awaits a pending resolveThingContext before saving message link and auto-ban message', async () => {
+		let resolveCtx!: (
+			ctx: {messageLink?: string; banTokenInfo: Record<string, string>; defaultBanMessage: string},
+		) => void
+		const resolveThingContext = vi.fn(() =>
+			new Promise<
+				{messageLink?: string; banTokenInfo: Record<string, string>; defaultBanMessage: string}
+			>((resolve,) => {
+				resolveCtx = resolve
+			},)
+		)
+		const onSave = vi.fn().mockResolvedValue(undefined,)
+		const host = renderPopup({
+			colors: [{key: 'autoban', text: 'Auto Ban', color: 'red', banDuration: 7,},],
+			defaultBanMessage: 'Violation on {title}',
+			resolveThingContext,
+			onSave,
+		},)
+
+		clickByText(host, 'Auto Ban',)
+		setNoteInputValue(host, 'fast save',)
+		// Unresolved-token warning stays suppressed while resolveThingContext is in flight.
+		expect(host.querySelector('[role="status"]',),).toBeNull()
+
+		await clickByTextAsync(host, 'Save for /r/testsub',)
+		expect(onSave,).not.toHaveBeenCalled()
+
+		await act(async () => {
+			resolveCtx({
+				messageLink: 'https://www.reddit.com/mail/perma/msg123',
+				banTokenInfo: {author: 'alice', subreddit: 'testsub', title: 'Bad Post',},
+				defaultBanMessage: 'Violation on Bad Post',
+			},)
+			await Promise.resolve()
+		},)
+
+		expect(onSave,).toHaveBeenCalledWith(expect.objectContaining({
+			includeMessageLink: true,
+			triggerBan: true,
+			banMessage: 'Violation on Bad Post',
+		},),)
+	})
+
+	it('does not block non-ban save on pending resolveThingContext when mayHaveMessageLink is false', async () => {
+		const resolveThingContext = vi.fn(() => new Promise<undefined>(() => {},))
+		const onSave = vi.fn().mockResolvedValue(undefined,)
+		const host = renderPopup({
+			colors: [{key: 'spam', text: 'Spam', color: 'red',},],
+			messageLink: undefined,
+			mayHaveMessageLink: false,
+			resolveThingContext,
+			onSave,
+		},)
+
+		clickByText(host, 'Spam',)
+		setNoteInputValue(host, 'quick note',)
+		await clickByTextAsync(host, 'Save for /r/testsub',)
+
+		expect(onSave,).toHaveBeenCalledWith(expect.objectContaining({
+			note: 'quick note',
+			includeMessageLink: false,
+			triggerBan: false,
+		},),)
+	})
+
+	it('re-resolves a ban macro picked before resolveThingContext finishes', async () => {
+		let resolveCtx!: (
+			ctx: {messageLink?: string; banTokenInfo: Record<string, string>; defaultBanMessage: string},
+		) => void
+		const resolveThingContext = vi.fn(() =>
+			new Promise<
+				{messageLink?: string; banTokenInfo: Record<string, string>; defaultBanMessage: string}
+			>((resolve,) => {
+				resolveCtx = resolve
+			},)
+		)
+		const host = renderPopup({
+			colors: [{key: 'autoban', text: 'Auto Ban', color: 'red', banDuration: 7,},],
+			savedBanMacros: [
+				{id: 'm1', title: 'Rule 1', note: 'r1', message: 'Removed "{title}"', permanent: false, days: 7,},
+			],
+			defaultBanMessage: 'initial default',
+			resolveThingContext,
+		},)
+
+		clickByText(host, 'Auto Ban',)
+		const select = host.querySelector<HTMLSelectElement>('select[aria-label="Apply ban macro"]',)
+		expect(select,).not.toBeNull()
+		act(() => {
+			select!.value = '0'
+			select!.dispatchEvent(new Event('change', {bubbles: true,},),)
+		},)
+		const textarea = host.querySelector<HTMLTextAreaElement>('textarea[placeholder="ban note to user"]',)!
+		expect(textarea.value,).toBe('Removed "{title}"',)
+
+		await act(async () => {
+			resolveCtx({
+				banTokenInfo: {author: 'alice', subreddit: 'testsub', title: 'Offending Post',},
+				defaultBanMessage: 'resolved default',
+			},)
+			await Promise.resolve()
+		},)
+
+		expect(textarea.value,).toBe('Removed "Offending Post"',)
+	})
+
+	it('ignores undefined returned by onRefreshNotes and handles async resolver failures safely', async () => {
+		const onRefreshNotes = vi.fn().mockResolvedValue(undefined,)
+		const resolveTargetIsMod = vi.fn().mockRejectedValue(new Error('network',),)
+		const resolveThingContext = vi.fn().mockRejectedValue(new Error('network',),)
+		const host = renderPopup({
+			colors: [{key: 'autoban', text: 'Auto Ban', color: 'red', banDuration: 7,},],
+			initialNotes: [
+				{id: 1, type: 'spam', note: 'kept note', mod: 'mod1', time: 1_700_000_000,},
+			],
+			defaultBanMessage: 'Ban for {title}',
+			onRefreshNotes,
+			resolveTargetIsMod,
+			resolveThingContext,
+		},)
+
+		await act(async () => {
+			await Promise.resolve()
+			await Promise.resolve()
+		},)
+
+		expect(host.textContent,).toContain('kept note',)
+		clickByText(host, 'Auto Ban',)
+		// Once resolveThingContext settles (even on failure), unresolved token warning appears.
+		expect(host.textContent,).toContain('{title}',)
+	})
 })

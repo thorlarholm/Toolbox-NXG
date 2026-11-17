@@ -35,6 +35,13 @@ import css from './AddUserNotePopup.module.css'
 
 const log = createLogger('UserNotes',)
 
+/** Thing-derived context resolved asynchronously after popup mount. */
+export interface ResolvedUsernoteThingContext {
+	messageLink?: string | undefined
+	banTokenInfo: Record<string, string>
+	defaultBanMessage: string
+}
+
 /** Props for the AddUserNotePopup component. */
 export interface AddUserNotePopupProps {
 	subreddit: string
@@ -92,7 +99,7 @@ export interface AddUserNotePopupProps {
 	/** The acting moderator's username, for local attribution display. */
 	currentUser?: string | undefined
 	/** Called after mount to replace the initial history with freshly loaded Toolbox notes. */
-	onRefreshNotes?: (() => Promise<ExistingNote[]>) | undefined
+	onRefreshNotes?: (() => Promise<ExistingNote[] | undefined>) | undefined
 	onClose: () => void
 	/** When true, auto-ban options are suppressed since mods cannot be banned. */
 	targetIsMod?: boolean | undefined
@@ -106,15 +113,13 @@ export interface AddUserNotePopupProps {
 	 * `banTokenInfo`, `defaultBanMessage`), letting the popup mount immediately
 	 * without blocking on `/api/info.json`.
 	 */
-	resolveThingContext?:
-		| (() => Promise<
-			{
-				messageLink?: string | undefined
-				banTokenInfo: Record<string, string>
-				defaultBanMessage: string
-			} | undefined
-		>)
-		| undefined
+	resolveThingContext?: (() => Promise<ResolvedUsernoteThingContext | undefined>) | undefined
+	/**
+	 * Whether `resolveThingContext` could plausibly produce a removal message link
+	 * (`hasMessageLinks()`). When `false`, non-ban saves skip waiting for
+	 * `resolveThingContext` just to check `messageLink`. Defaults to `true`.
+	 */
+	mayHaveMessageLink?: boolean | undefined
 	/**
 	 * The subreddit's usernote save-requirement flags and enforcement mode.
 	 * Combined with the acting moderator's personal settings to decide whether a
@@ -156,6 +161,7 @@ export function AddUserNotePopup ({
 	targetIsMod = false,
 	resolveTargetIsMod,
 	resolveThingContext,
+	mayHaveMessageLink = true,
 	subRequire,
 	savedBanMacros = [],
 	banTokenInfo = {author: user, subreddit, ...(currentUser ? {mod: currentUser,} : {}),},
@@ -179,6 +185,7 @@ export function AddUserNotePopup ({
 	const [resolvedMessageLink, setResolvedMessageLink,] = useState<string | undefined>(undefined,)
 	const [resolvedBanTokenInfo, setResolvedBanTokenInfo,] = useState<Record<string, string> | undefined>(undefined,)
 	const [resolvedDefaultBanMessage, setResolvedDefaultBanMessage,] = useState<string | undefined>(undefined,)
+	const [thingContextPending, setThingContextPending,] = useState(Boolean(resolveThingContext,),)
 	const effectiveTargetIsMod = targetIsMod || resolvedTargetIsMod
 	const effectiveMessageLink = messageLink ?? resolvedMessageLink
 	const effectiveBanTokenInfo = resolvedBanTokenInfo ?? banTokenInfo
@@ -186,8 +193,11 @@ export function AddUserNotePopup ({
 	const [banMessage, setBanMessage,] = useState(effectiveDefaultBanMessage,)
 	const notesTouchedRef = useRef(false,)
 	const banMessageDirtyRef = useRef(false,)
+	const selectedMacroRef = useRef<SavedBanMacro | null>(null,)
 	const prevSelectedTypeRef = useRef(selectedType,)
 	const modCheckPromiseRef = useRef<Promise<boolean> | null>(null,)
+	const thingContextPromiseRef = useRef<Promise<ResolvedUsernoteThingContext | undefined> | null>(null,)
+	const thingContextSettledRef = useRef(!resolveThingContext,)
 
 	const closePopupAfterNoteSave = useSetting(usernotes, 'closePopupAfterNoteSave', true,)
 
@@ -229,7 +239,7 @@ export function AddUserNotePopup ({
 		if (!onRefreshNotes) { return }
 		let alive = true
 		onRefreshNotes().then((freshNotes,) => {
-			if (!alive || notesTouchedRef.current) { return }
+			if (!alive || notesTouchedRef.current || freshNotes === undefined) { return }
 			setNotes(freshNotes,)
 		},).catch((error,) => {
 			log.error('Failed to refresh usernotes:', error,)
@@ -245,6 +255,7 @@ export function AddUserNotePopup ({
 		if (prevSelectedTypeRef.current !== selectedType) {
 			prevSelectedTypeRef.current = selectedType
 			banMessageDirtyRef.current = false
+			selectedMacroRef.current = null
 			setTriggerBan(true,)
 			setBanMessage(effectiveDefaultBanMessage,)
 			return
@@ -268,16 +279,33 @@ export function AddUserNotePopup ({
 	}, [resolveTargetIsMod,],)
 
 	useEffect(() => {
-		if (!resolveThingContext) { return }
+		if (!resolveThingContext) {
+			thingContextSettledRef.current = true
+			setThingContextPending(false,)
+			return
+		}
 		let alive = true
-		resolveThingContext().then((ctx,) => {
-			if (!alive || !ctx) { return }
+		thingContextSettledRef.current = false
+		setThingContextPending(true,)
+		const promise = resolveThingContext().then((ctx,) => {
+			thingContextSettledRef.current = true
+			if (!alive) { return ctx }
+			setThingContextPending(false,)
+			if (!ctx) { return undefined }
 			if (ctx.messageLink !== undefined) { setResolvedMessageLink(ctx.messageLink,) }
 			setResolvedBanTokenInfo(ctx.banTokenInfo,)
 			setResolvedDefaultBanMessage(ctx.defaultBanMessage,)
+			if (selectedMacroRef.current) {
+				setBanMessage(resolveBanMacro(selectedMacroRef.current, ctx.banTokenInfo,).message,)
+			}
+			return ctx
 		},).catch((error: unknown,) => {
+			thingContextSettledRef.current = true
+			if (alive) { setThingContextPending(false,) }
 			log.error('Failed to resolve usernote thing context:', error,)
+			return undefined
 		},)
+		thingContextPromiseRef.current = promise
 		return () => {
 			alive = false
 		}
@@ -304,7 +332,28 @@ export function AddUserNotePopup ({
 				isTargetMod = await modCheckPromiseRef.current
 			}
 			const banning = editingNoteId === undefined && hasAutoBan && triggerBan && !isTargetMod
-			if (banning && requireBanMessage && !banMessage.trim()) {
+
+			let submitMessageLink = effectiveMessageLink
+			let submitBanMessage = banMessage
+			const needsThingForBan = banning && (!banMessageDirtyRef.current || selectedMacroRef.current !== null)
+			const needsThingForMessageLink = mayHaveMessageLink && includeMessageLink && submitMessageLink === undefined
+			const needsPendingThingContext = editingNoteId === undefined
+				&& !thingContextSettledRef.current
+				&& thingContextPromiseRef.current !== null
+				&& (needsThingForMessageLink || needsThingForBan)
+			if (needsPendingThingContext) {
+				const ctx = await thingContextPromiseRef.current
+				if (ctx) {
+					if (ctx.messageLink !== undefined) { submitMessageLink = ctx.messageLink }
+					if (selectedMacroRef.current) {
+						submitBanMessage = resolveBanMacro(selectedMacroRef.current, ctx.banTokenInfo,).message
+					} else if (!banMessageDirtyRef.current) {
+						submitBanMessage = ctx.defaultBanMessage
+					}
+				}
+			}
+
+			if (banning && requireBanMessage && !submitBanMessage.trim()) {
 				setError(`/r/${subreddit} requires a ban message`,)
 				return
 			}
@@ -325,9 +374,9 @@ export function AddUserNotePopup ({
 					note: noteText.trim(),
 					type: selectedType,
 					includeLink: includeLink && !disableLink,
-					includeMessageLink: includeMessageLink && !!effectiveMessageLink,
+					includeMessageLink: includeMessageLink && !!submitMessageLink,
 					triggerBan: banning,
-					banMessage,
+					banMessage: submitBanMessage,
 				},)
 				if (closePopupAfterNoteSave) {
 					onClose()
@@ -630,6 +679,7 @@ export function AddUserNotePopup ({
 						disabled={saving}
 						// The note type fixes this ban's duration, so only the message applies.
 						onApply={(macro,) => {
+							selectedMacroRef.current = macro
 							banMessageDirtyRef.current = true
 							setBanMessage(resolveBanMacro(macro, effectiveBanTokenInfo,).message,)
 						}}
@@ -643,12 +693,15 @@ export function AddUserNotePopup ({
 						value={banMessage}
 						disabled={saving}
 						onChange={(event,) => {
+							selectedMacroRef.current = null
 							banMessageDirtyRef.current = true
 							setBanMessage(event.target.value,)
 						}}
 					/>
 				)}
-				{editingNoteId === undefined && hasAutoBan && triggerBan && <BanTokenWarning text={banMessage} />}
+				{editingNoteId === undefined && hasAutoBan && triggerBan && !thingContextPending && (
+					<BanTokenWarning text={banMessage} />
+				)}
 				<div className={css.composerFooter}>
 					{editingNoteId === undefined && hasAutoBan && (
 						<label className={css.includeBan}>
