@@ -21,7 +21,7 @@
 - **Remotes & Upstream-Clean Branching**:
   - `origin`: `git@github.com:thorlarholm/Toolbox-NXG.git`
   - `upstream`: `git@github.com:toolbox-nxg/Toolbox-NXG.git`
-  - Local `main` holds workspace-only commits (`fc4694ae` onward for [`AGENTS.md`](AGENTS.md)).
+  - Local `main` holds workspace-only commits (`AGENTS.md`, `FINDINGS.md`, `SESSIONLOG.md`, `scratch/.gitkeep`).
   - Always create PR branches from `origin/main` (synced with `upstream/main`), never from local `main`, so workspace-only setup and documentation never leak into upstream PRs.
   - Keep PR branches focused strictly on the intended Toolbox-NXG review findings, fixes, or enhancements.
 - **Upstream Etiquette & Reuse ([`docs/developer/contributing.md`](docs/developer/contributing.md))**:
@@ -41,59 +41,8 @@
     - `npm test`
     - `npm run build`
 
-## 4. Session Log & Findings
+## 4. Reference Docs (Read Only When Relevant)
 
-### 2026-11-14 — Initial Workspace Setup & Contribution Workflow
-
-- Cloned `https://github.com/thorlarholm/Toolbox-NXG.git` into `/Users/thor/Projects/Toolbox-NXG` (`main` at `328e06e6`) and added `upstream` (`https://github.com/toolbox-nxg/Toolbox-NXG.git`).
-- Cloned `https://github.com/toolbox-nxg/Toolbox-NXG.git` (`main` at `328e06e6`) and `https://github.com/toolbox-team/reddit-moderator-toolbox.git` (`master` at `e87b919a`) originally into `./reference/`, then moved them outside the repo to `/Users/thor/Projects/Toolbox-NXG-reference/` (restoring [`.gitignore`](.gitignore) to upstream) after confirming `eslint .` traversed `./reference/` (392 ESLint errors inside `./reference/`, 0 in workspace files).
-- Documented workspace purpose, reference read restrictions, and contribution workflow (from [`docs/developer/contributing.md`](docs/developer/contributing.md), [`docs/developer/building.md`](docs/developer/building.md), [`docs/developer/coding-style.md`](docs/developer/coding-style.md), and [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)) in [`AGENTS.md`](AGENTS.md).
-- Pinned non-interactive `zsh` to nvm Node `v24.14.1` in `~/.zshenv`, configured `min-release-age=7` in `~/.npmrc`, installed packages via `npm ci`, and verified all 7 checks pass cleanly (`fmt`, `lint`, `lint:css`, `lint:params`, `typecheck`, `test` [204 files / 2647 tests], `build`).
-- Verified `gh` CLI authenticated as `thorlarholm` and **Google Chrome** installed for unpacked `build/chrome/` testing (**Firefox** not currently installed locally).
-- **Completed (2026-11-18)**: Uninstalled legacy global Node 16, `yarn`, and `taiko` under `/usr/local/` (and cleaned `~/.config/yarn` and `~/Library/Caches/Yarn`), switched `~/.zshenv` + `~/.zprofile` to resolve `$NVM_DIR/alias/default` dynamically ahead of `/etc/zprofile` (`path_helper`), and simplified `~/.zshrc` to lazy-load `nvm()` only.
-
-### 2026-11-14 — Usernotes (`N`-Tag) Popup Latency Optimization
-
-- Created PR branch `perf/usernotes-popup-latency` from `origin/main` (`328e06e6`) and implemented the 4-commit optimization roadmap:
-  - `078d527b` (`perf(usernotes): skip purifyObject walk over inflated usernotes tree`): Scoped `purifyObject` in `readNxgUsernotes` to `notes.types` only (`extension/data/modules/shared/usernotes/moduleapi.ts`, `moduleapi.test.ts`).
-  - `d81f7178` (`perf(usernotes): open AddUserNotePopup without waiting on thing or mod lookups`): Removed blocking `getApiThingInfo` and `getModeratorListResult` awaits before opening [`AddUserNotePopup.tsx`](extension/data/modules/usernotes/components/AddUserNotePopup.tsx) from [`dom.tsx`](extension/data/modules/usernotes/dom.tsx), passing `resolveTargetIsMod` and `resolveThingContext`, guarding user-edited ban messages with `banMessageDirtyRef`, and adding tests in [`AddUserNotePopup.test.tsx`](extension/data/modules/usernotes/components/AddUserNotePopup.test.tsx).
-  - `ac1f3897` (`perf(usernotes): avoid forced refresh on mount and parallelize compat reads`): Switched popup mount to cache-first `getUserNotes(subreddit,)` (`onRefreshNotes` only when `!cachedSubState`), parallelized `readShardedUsernotes` + `readLegacyUsersForDiff` via `Promise.all`, and short-circuited `diffLegacyNotes` in [`reconcile.ts`](extension/data/util/wiki/schemas/usernotes/reconcile.ts) before `structuredClone(nxgUsers,)` when `computeLegacyDiff` has no adds or archived keys.
-  - `194bf524` (`perf(usernotes): skip redundant wiki re-read in updateUserNotes save`): Added `alreadyReconciled` parameter to `doSaveUserNotes` (set `true` from `doUpdateUserNotes`) to eliminate the second shard/legacy read cycle on compat-on saves.
-- Verified all checks on `perf/usernotes-popup-latency` (`Node v24.14.1`): `npm run typecheck`, `npm run lint`, `npm run fmt`, `npm run lint:css`, `npm run lint:params` (0 violations), `npm run test` (204 files / 2650 tests), and `npm run build:chrome`.
-- Pushed `perf/usernotes-popup-latency` (`194bf524`) to `origin/perf/usernotes-popup-latency`, switched `origin` and `upstream` remotes to SSH (`git@github.com:...`), and checked out local `main`.
-
-### 2026-11-14 — Chrome Build Verification, DevTools MCP Findings & Scratch Policy
-
-- Verified [`build/chrome/`](build/chrome/manifest.json) (`v8.0.0.14`, built `2026-11-14 15:21`) already compiles in all 4 `perf/usernotes-popup-latency` commits (`078d527b`, `d81f7178`, `ac1f3897`, `194bf524`) while local `HEAD` stays on workspace-only `main` (do not run `npm run build:chrome` on `main` or it overwrites the PR build).
-- Tested `chrome-devtools` MCP `--autoConnect --categoryExtensions` against active Google Chrome (`157.0.8103.51`): `list_pages` (`1090+` tabs, `/r/DKTEST/` at `pageId: 1216`) and `list_extensions` (`dnijncinfnoomolcdgbeoepaeoaaphhh`, `v8.0.0.14` Enabled) succeeded, but `select_page` timed out after 3 minutes (`context deadline exceeded`) and `--autoConnect` caused UI freezes/CPU spikes across 1,090+ tabs.
-- Removed `--autoConnect` and `--logFile` from `~/.gemini/config/mcp_config.json` and disabled Chrome remote debugging; keep automated `chrome-devtools` MCP checks on the isolated single-tab profile instead.
-- Added [`scratch/.gitkeep`](scratch/.gitkeep) (gitignoring `/scratch/*` except `!/scratch/.gitkeep` on local `main`) and standardized on project-local `./scratch/` instead of `/tmp` for temporary files.
-
-### 2026-11-17 — Upstream Rebase, Critical Review & Latency Edge-Case Fixes
-
-- Fetched `upstream` (`bbc3d3f7`, 9 commits ahead of `328e06e6`), fast-forwarded `origin/main` to `bbc3d3f7`, rebased `perf/usernotes-popup-latency` (`194bf524` -> `78faa8a8`) onto `upstream/main` (`6268fb60`..`78faa8a8`), and rebased local `main` (`b8eee721` -> `24a3ec5d`) onto `upstream/main` (`85b113c3`..`24a3ec5d`).
-- Audited all 4 `perf/usernotes-popup-latency` commits and implemented 4 topic commits fixing identified races, tradeoffs, and test gaps (`93781d89`..`e13b4e1a`):
-  - `93781d89` (`perf(usernotes): expose hasMessageLinks helper to skip unneeded save waits`): Added `hasMessageLinks()` in `extension/data/modules/shared/usernotes/messageLinkCache.ts` and tests in `messageLinkCache.test.ts`.
-  - `2048a387` (`fix(usernotes): await pending thing context on save and avoid macro/warning races`): Added `mayHaveMessageLink` and `thingContextPending`/`thingContextPromiseRef`/`selectedMacroRef` tracking in `AddUserNotePopup.tsx` so fast saves wait for pending `resolveThingContext` when needed, pre-resolution ban macros re-resolve once tokens arrive, and `<BanTokenWarning>` doesn't flash while pending; added tests in `AddUserNotePopup.test.tsx`.
-  - `98f0200e` (`fix(usernotes): refine popup store hydration, background refresh, and link resolution`): Updated `dom.tsx` to hydrate cold stores in a single `getUserNotes(subreddit,)` call, run cache-respecting `onRefreshNotes` on warm stores (no-op when unchanged, updating on fresher `noteCache`/TTL), await `thingPromise` on `includeMessageLink` saves, and prefer normalized `resolvedThing.permalink`; added `extension/data/modules/usernotes/dom.test.tsx`.
-  - `e13b4e1a` (`test(usernotes): cover purify skip, compat-on edge cases, and diff reference reuse`): Added missing unit tests in `moduleapi.test.ts` and `reconcile.test.ts`.
-- Verified all 7 pre-PR checks on `perf/usernotes-popup-latency` (`e13b4e1a`, Node `v24.14.1`): `fmt`, `lint`, `lint:css`, `lint:params` (0 violations), `typecheck`, `test` (210 files / 2,683 tests), and `build` ([`build/chrome/`](build/chrome/manifest.json) + [`build/firefox/`](build/firefox/manifest.json)).
-- Pushed `perf/usernotes-popup-latency` (`e13b4e1a`) to `origin/perf/usernotes-popup-latency` (PR against `toolbox-nxg:main` intentionally held pending manual browser testing) and returned `HEAD` to local `main` (leaving the `e13b4e1a` `build/` artifacts intact).
-
-### 2026-11-18 — Legacy Node 16 Removal & System-Wide `nvm` Default
-
-- Removed legacy global Node `v16.13.2`, `npm`/`npx`/`corepack`, `yarn`/`yarnpkg`, and `taiko` from `/usr/local/`, along with `~/.config/yarn` and `~/Library/Caches/Yarn` (`~/Library/Caches/node-gyp/24.14.1` retained).
-- Replaced the hardcoded `v24.14.1` pin in `~/.zshenv` with dynamic resolution of `$NVM_DIR/alias/default` (`24` → `v24.14.1`), re-prepended `_NVM_DEFAULT_BIN` in `~/.zprofile` after `/etc/zprofile` (`path_helper`) and `brew shellenv`, and removed `node`/`npm`/`yarn`/`npx` lazy wrappers in `~/.zshrc` (retaining lazy-loading for `nvm()` only).
-- Verified `zsh -c`, `zsh -l -c`, and `zsh -i -c` all resolve `node`, `npm`, and `npx` directly to `/Users/thor/.nvm/versions/node/v24.14.1/bin` (`v24.14.1` / `npm 11.11.0`).
-- Added local [`.nvmrc`](.nvmrc) (`v24.14.1`) and ignored `/.nvmrc` in [`.git/info/exclude`](.git/info/exclude) so it stays active across PR branches without polluting diffs or `git status` (verified `nvm use`, `npm run fmt`, and `npm run lint`).
-
-### 2026-11-18 — Test Harness Audit & Live Auth Probe (`scripts/auth-probe.js`)
-
-- **No live-browser automated tests**: Verified via [`package.json`](package.json), [`vitest.config.ts`](vitest.config.ts), and [`.github/workflows/main.yml`](.github/workflows/main.yml) that all automated tests run under Vitest (`happy-dom` default, or `node` for 35 files). Playwright is not installed locally or globally (`@vitest/browser-playwright` in [`package-lock.json`](package-lock.json) is only an optional `vitest` peer dependency from upstream `4eb66c97`), and neither `2026-11-14` `chrome-devtools` MCP attempt (`6c73292d` Reddit login CAPTCHA; `cc7683a1` `select_page` 3m timeout on 1,090+ tabs) completed live-browser extension testing.
-- **Live Reddit auth verification on `/r/DKTEST`**: Ran [`scripts/auth-probe.js`](scripts/auth-probe.js) in Chrome's extension service worker DevTools console (`sub = 'DKTEST'`) plus a follow-up check for `/r/DKTEST/comments/1snitqy.json?limit=1` (skipped in the main run because `old.reddit.com/r/DKTEST/new.json?limit=1` returned `403` Shreddit HTML while `oauth.reddit.com/r/DKTEST/hot.json?limit=2` returned `200`).
-- **Probe results (`32 / 32` GET endpoints `ok`, `0` broken)**:
-  - Token exchange (`POST /svc/shreddit/token`) returned `200`; `old /api/me.json` returned `200` with `modhash present: true`.
-  - **Cookie-only (`403` HTML with Bearer)**: `/api/info.json`, `/r/DKTEST/api/info.json`, and `/r/DKTEST/comments/1snitqy.json`.
-  - **Bearer-required (`404`/`403` HTML on cookie-only)**: `/r/DKTEST/api/user_flair_v2` & `/r/DKTEST/api/link_flair_v2` (`404` cookie-only → `200` bearer), plus `/api/mod/conversations/unread/count`, `/api/mod/notes`, `/api/mod/notes/recent`, and `/api/v1/DKTEST/removal_reasons` (`403` cookie-only → `200` bearer).
-  - **All modes `200`**: `/api/v1/me`, `/subreddits/mine/moderator.json`, `/r/DKTEST/about*.json`, `/r/DKTEST/hot.json`, `/r/DKTEST/wiki/*`, and `/user/spez*`.
-  - **Mutations & `POST` behavior**: `POST /r/DKTEST/api/flairselector` returned HTML on cookie-only vs. JSON under bearer/`cookie+bearer` (matching `initialOAuthMode` in [`webrequest.ts`](extension/data/background/handlers/webrequest.ts) using `'bearer'` for non-reads); `POST /api/unsave` (`id=t3_0`) returned `403` without `X-Modhash` vs. `400` with bearer or `cookie + X-Modhash` on `oauth`/`old`.
+- **Technical Findings** ([`FINDINGS.md`](FINDINGS.md)): Curated discoveries on local environment/builds, test harness, browser/DevTools MCP limits, and Reddit API auth behavior. Read only when working in those areas; update in place rather than appending duplicate entries.
+- **Session History** ([`SESSIONLOG.md`](SESSIONLOG.md)): Chronological log of past sessions, branch/build state, and completed work (newest first). Read only when checking project status or past decisions.
+- **Update Rule**: Never append session logs or findings to `AGENTS.md`. Record dated work in [`SESSIONLOG.md`](SESSIONLOG.md) and durable facts in [`FINDINGS.md`](FINDINGS.md) on local `main`.
