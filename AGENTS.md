@@ -72,7 +72,6 @@
 ### 2026-11-17 — Upstream Rebase, Critical Review & Latency Edge-Case Fixes
 
 - Fetched `upstream` (`bbc3d3f7`, 9 commits ahead of `328e06e6`), fast-forwarded `origin/main` to `bbc3d3f7`, rebased `perf/usernotes-popup-latency` (`194bf524` -> `78faa8a8`) onto `upstream/main` (`6268fb60`..`78faa8a8`), and rebased local `main` (`b8eee721` -> `24a3ec5d`) onto `upstream/main` (`85b113c3`..`24a3ec5d`).
-- Note on sandboxed PATH: in non-interactive harness shells, `/usr/local/bin/node` (`v16.13.2`) precedes `/Users/thor/.nvm/versions/node/v24.14.1/bin` in `PATH`, so prepend `~/.nvm/versions/node/v24.14.1/bin` when invoking `npm` scripts inside the sandbox.
 - Audited all 4 `perf/usernotes-popup-latency` commits and implemented 4 topic commits fixing identified races, tradeoffs, and test gaps (`93781d89`..`e13b4e1a`):
   - `93781d89` (`perf(usernotes): expose hasMessageLinks helper to skip unneeded save waits`): Added `hasMessageLinks()` in `extension/data/modules/shared/usernotes/messageLinkCache.ts` and tests in `messageLinkCache.test.ts`.
   - `2048a387` (`fix(usernotes): await pending thing context on save and avoid macro/warning races`): Added `mayHaveMessageLink` and `thingContextPending`/`thingContextPromiseRef`/`selectedMacroRef` tracking in `AddUserNotePopup.tsx` so fast saves wait for pending `resolveThingContext` when needed, pre-resolution ban macros re-resolve once tokens arrive, and `<BanTokenWarning>` doesn't flash while pending; added tests in `AddUserNotePopup.test.tsx`.
