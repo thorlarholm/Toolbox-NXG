@@ -50,7 +50,7 @@
 - Documented workspace purpose, reference read restrictions, and contribution workflow (from [`docs/developer/contributing.md`](docs/developer/contributing.md), [`docs/developer/building.md`](docs/developer/building.md), [`docs/developer/coding-style.md`](docs/developer/coding-style.md), and [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)) in [`AGENTS.md`](AGENTS.md).
 - Pinned non-interactive `zsh` to nvm Node `v24.14.1` in `~/.zshenv`, configured `min-release-age=7` in `~/.npmrc`, installed packages via `npm ci`, and verified all 7 checks pass cleanly (`fmt`, `lint`, `lint:css`, `lint:params`, `typecheck`, `test` [204 files / 2647 tests], `build`).
 - Verified `gh` CLI authenticated as `thorlarholm` and **Google Chrome** installed for unpacked `build/chrome/` testing (**Firefox** not currently installed locally).
-- **Pending (non-blocking)**: Interactive `sudo rm -rf` cleanup of legacy global Node 16, `yarn`, and `taiko` under `/usr/local/` (does not block builds since `~/.zshenv` prepends nvm `v24.14.1`).
+- **Completed (2026-11-18)**: Uninstalled legacy global Node 16, `yarn`, and `taiko` under `/usr/local/` (and cleaned `~/.config/yarn` and `~/Library/Caches/Yarn`), switched `~/.zshenv` + `~/.zprofile` to resolve `$NVM_DIR/alias/default` dynamically ahead of `/etc/zprofile` (`path_helper`), and simplified `~/.zshrc` to lazy-load `nvm()` only.
 
 ### 2026-11-14 — Usernotes (`N`-Tag) Popup Latency Optimization
 
@@ -80,3 +80,9 @@
   - `e13b4e1a` (`test(usernotes): cover purify skip, compat-on edge cases, and diff reference reuse`): Added missing unit tests in `moduleapi.test.ts` and `reconcile.test.ts`.
 - Verified all 7 pre-PR checks on `perf/usernotes-popup-latency` (`e13b4e1a`, Node `v24.14.1`): `fmt`, `lint`, `lint:css`, `lint:params` (0 violations), `typecheck`, `test` (210 files / 2,683 tests), and `build` ([`build/chrome/`](build/chrome/manifest.json) + [`build/firefox/`](build/firefox/manifest.json)).
 - Pushed `perf/usernotes-popup-latency` (`e13b4e1a`) to `origin/perf/usernotes-popup-latency` (PR against `toolbox-nxg:main` intentionally held pending manual browser testing) and returned `HEAD` to local `main` (leaving the `e13b4e1a` `build/` artifacts intact).
+
+### 2026-11-18 — Legacy Node 16 Removal & System-Wide `nvm` Default
+
+- Removed legacy global Node `v16.13.2`, `npm`/`npx`/`corepack`, `yarn`/`yarnpkg`, and `taiko` from `/usr/local/`, along with `~/.config/yarn` and `~/Library/Caches/Yarn` (`~/Library/Caches/node-gyp/24.14.1` retained).
+- Replaced the hardcoded `v24.14.1` pin in `~/.zshenv` with dynamic resolution of `$NVM_DIR/alias/default` (`24` → `v24.14.1`), re-prepended `_NVM_DEFAULT_BIN` in `~/.zprofile` after `/etc/zprofile` (`path_helper`) and `brew shellenv`, and removed `node`/`npm`/`yarn`/`npx` lazy wrappers in `~/.zshrc` (retaining lazy-loading for `nvm()` only).
+- Verified `zsh -c`, `zsh -l -c`, and `zsh -i -c` all resolve `node`, `npm`, and `npx` directly to `/Users/thor/.nvm/versions/node/v24.14.1/bin` (`v24.14.1` / `npm 11.11.0`).
