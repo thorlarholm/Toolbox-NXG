@@ -21,6 +21,11 @@ Curated technical discoveries for this workspace. Update entries in place when f
 - **`chrome-devtools` MCP limitations**:
   - `--autoConnect --categoryExtensions` against an active Chrome session (`157.0.8103.51`) with 1,090+ tabs caused UI freezes, CPU spikes, and a 3-minute `select_page` timeout (`context deadline exceeded`). `--autoConnect` and `--logFile` were removed from `~/.gemini/config/mcp_config.json`, and Chrome remote debugging was disabled.
   - Isolated MCP Chrome profiles hit Reddit's `"Prove your humanity"` login CAPTCHA. Use manual unpacked-extension testing in your main Chrome profile for authenticated UI verification, and reserve `chrome-devtools` MCP for isolated single-tab sessions.
+- **Claude Code browser access**: Claude in Chrome (`mcp__claude-in-chrome__*`) acts in the real Chrome profile with existing Reddit sign-ins, so it avoids the CAPTCHA. Always work in a single new tab and never enumerate or attach to the 1,090+ existing tabs. Do not reintroduce `chrome-devtools --autoConnect`.
+
+## 5. Git Topology
+
+- **`origin/main` is not an upstream mirror**: It carries the workspace-only commits (pushed from local `main`), so branching from `origin/main` leaks workspace docs into PRs. That happened to the original `fix/notification-id-length` (`f4c8c182`), which was rebuilt on `upstream/main` as `fix/notification-id-length-v2` on `2026-11-19`.
 
 ## 4. Reddit API Auth & `scripts/auth-probe.js`
 

@@ -2,6 +2,13 @@
 
 Chronological record of workspace sessions, branch/build state, and completed work (newest first).
 
+## 2026-11-19 — Handover from Gemini Antigravity to Claude Code
+
+- Reviewed the workspace setup and global Antigravity rules (`~/.gemini/config/AGENTS.md`) read-only. Decisions: Antigravity and Claude Code both stay in use with `AGENTS.md` as the shared rules file, and the workspace commits stay on `origin/main` (no force-push).
+- Found that `origin/main` carries 14 workspace commits, so the old "branch from `origin/main`" rule leaked workspace docs into `fix/notification-id-length` (`f4c8c182`). Changed [`AGENTS.md`](AGENTS.md) §3 to branch from `upstream/main` and added a worktree workflow (`/Users/thor/Projects/Toolbox-NXG-worktrees/`) so this checkout stays on `main`.
+- Added [`CLAUDE.md`](CLAUDE.md) (`@AGENTS.md`), [`.claude/settings.json`](.claude/settings.json) (allows the 7 checks and read-only git/gh; asks before force/delete operations, PR creation, and reads of the reference clones), and `~/.claude/CLAUDE.md` (Part 1 of the Gemini global rules).
+- Rebuilt the notification fix as `fix/notification-id-length-v2` (`2c7f5d9a`, cherry-pick of `f4c8c182`) on `upstream/main` (`bbc3d3f7`) in worktree `/Users/thor/Projects/Toolbox-NXG-worktrees/fix-notification-id-length`. Reviewed it and verified all 7 checks: `fmt` (`dprint check`), `lint`, `lint:css`, `lint:params`, `typecheck`, `test` (209 files / 2,668 tests), `build`. Not pushed. The old branch is kept pending approval to delete.
+
 ## 2026-11-18 — `AGENTS.md` Progressive-Disclosure Split
 
 - Audited [`AGENTS.md`](AGENTS.md) and split `## 4. Session Log & Findings` into [`FINDINGS.md`](FINDINGS.md) (topic-organized technical reference, updated in place) and [`SESSIONLOG.md`](SESSIONLOG.md) (chronological log, newest first).

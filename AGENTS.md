@@ -14,15 +14,17 @@
   - `/Users/thor/Projects/Toolbox-NXG-reference/reddit-moderator-toolbox` (`https://github.com/toolbox-team/reddit-moderator-toolbox.git`)
 - **Why Outside the Repo**: Moved out of `./reference/` because ESLint 9 flat config (`eslint .` in `npm run lint`) does not honor `.gitignore` and otherwise lints inside local clones.
 - **Do Not Read Without Instruction**: Never read any files inside `/Users/thor/Projects/Toolbox-NXG-reference/` unless explicitly instructed to do so by the user.
-- **Temporary Files (`./scratch/`)**: Store temporary files and debug logs in project-local [`scratch/`](scratch/.gitkeep) instead of `/tmp`. Never leave `.js`/`.ts`/`.tsx` files in `./scratch/` during `npm run lint` since `eslint .` does not honor `.gitignore`.
+- **Temporary Files (`./scratch/`)**: Store temporary files and debug logs you may want to keep in project-local [`scratch/`](scratch/.gitkeep) instead of `/tmp`. Throwaway files may instead go in the agent harness's session scratch directory (e.g., Claude Code's scratchpad). Never leave `.js`/`.ts`/`.tsx` files in `./scratch/` during `npm run lint` since `eslint .` does not honor `.gitignore`.
+- **Git Worktrees for PR Branches**: Keep this checkout on local `main` so `AGENTS.md`, `CLAUDE.md`, and `.claude/settings.json` (which exist only on `main`) stay present. Work on PR branches in worktrees under `/Users/thor/Projects/Toolbox-NXG-worktrees/<branch-slug>` (`git worktree add -b <branch> <path> upstream/main`, then `npm ci` inside it). Never create worktrees inside this repo tree (e.g., `.claude/worktrees/` or `./scratch/`), because `eslint .` would lint them. Building in a worktree writes to that worktree's `build/`, so this checkout's [`build/`](build/chrome/manifest.json) test build stays intact.
 
 ## 3. Contribution Workflow & Pull Request Hygiene
 
 - **Remotes & Upstream-Clean Branching**:
   - `origin`: `git@github.com:thorlarholm/Toolbox-NXG.git`
   - `upstream`: `git@github.com:toolbox-nxg/Toolbox-NXG.git`
-  - Local `main` holds workspace-only commits (`AGENTS.md`, `FINDINGS.md`, `SESSIONLOG.md`, `scratch/.gitkeep`).
-  - Always create PR branches from `origin/main` (synced with `upstream/main`), never from local `main`, so workspace-only setup and documentation never leak into upstream PRs.
+  - Local `main` and `origin/main` both hold workspace-only commits (`AGENTS.md`, `CLAUDE.md`, `FINDINGS.md`, `SESSIONLOG.md`, `TODO.md`, `.gitignore` `scratch/` entries, `scratch/.gitkeep`). `origin/main` is **not** a mirror of `upstream/main`.
+  - Always create PR branches from `upstream/main` (`git fetch upstream && git switch -c <branch> upstream/main`), never from local `main` or `origin/main`, so workspace-only setup and documentation never leak into upstream PRs.
+  - Before pushing or opening a PR, confirm `git log --oneline upstream/main..<branch>` lists only the intended commits.
   - Keep PR branches focused strictly on the intended Toolbox-NXG review findings, fixes, or enhancements.
 - **Upstream Etiquette & Reuse ([`docs/developer/contributing.md`](docs/developer/contributing.md))**:
   - Before coding new functionality, check [GitHub Issues](https://github.com/toolbox-nxg/toolbox-nxg/issues) or [/r/toolbox_nxg](https://www.reddit.com/r/toolbox_nxg) to confirm it is not already in progress or intentionally omitted.
