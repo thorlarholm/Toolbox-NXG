@@ -112,6 +112,39 @@ describe('notification handlers', () => {
 		},)
 	})
 
+	it('preserves a 500-character dedupeKey verbatim and compacts longer keys deterministically', async () => {
+		registerNotificationHandlers()
+		const handler = handlerFor('toolbox-notification',)
+
+		const exactLimitKey = 'a'.repeat(500,)
+		await handler({native: true, details: {...details, dedupeKey: exactLimitKey,},}, sender(),)
+		expect(notifications.create,).toHaveBeenCalledWith(exactLimitKey, expect.objectContaining({title: 'Title',},),)
+
+		notifications.create.mockClear()
+
+		const sharedPrefix = `mq:consolidated:${
+			Array.from({length: 50,}, (_, i,) => `t3_${String(i,).padStart(6, '0',)}`,).join(',',)
+		}`
+		const longKeyA = `${sharedPrefix},t3_aaaaaa`
+		const longKeyB = `${sharedPrefix},t3_bbbbbb`
+		expect(longKeyA.length,).toBeGreaterThan(500,)
+
+		await handler({native: true, details: {...details, dedupeKey: longKeyA,},}, sender(),)
+		await handler({native: true, details: {...details, dedupeKey: longKeyA,},}, sender(),)
+		await handler({native: true, details: {...details, dedupeKey: longKeyB,},}, sender(),)
+
+		const idA1 = notifications.create.mock.calls[0]![0] as string
+		const idA2 = notifications.create.mock.calls[1]![0] as string
+		const idB = notifications.create.mock.calls[2]![0] as string
+
+		expect(idA1.length,).toBeLessThanOrEqual(500,)
+		expect(idA1,).toBe(idA2,)
+		expect(idA1,).not.toBe(idB,)
+
+		const pageID = await handler({native: false, details: {...details, dedupeKey: longKeyA,},}, sender(),)
+		expect(pageID,).toBe(idA1,)
+	})
+
 	it('creates page notifications on reddit tabs', async () => {
 		registerNotificationHandlers()
 

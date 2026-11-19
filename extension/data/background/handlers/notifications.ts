@@ -54,6 +54,44 @@ async function containerLabel (cookieStoreId: string | undefined,): Promise<stri
 	}
 }
 
+/** Chrome rejects notification IDs longer than 500 characters. */
+const MAX_NOTIFICATION_ID_LENGTH = 500
+/** Prefix length preserved when compacting an overlong `dedupeKey`. */
+const COMPACT_DEDUPE_PREFIX_LENGTH = 200
+
+/**
+ * Computes two independent 32-bit FNV-1a passes over `input` and returns a
+ * 16-char hex digest so distinct overlong dedupe keys remain distinguishable
+ * after prefix truncation.
+ */
+function hashDedupeKey (input: string,): string {
+	let h1 = 0x811c9dc5
+	let h2 = 0x811c9dc5
+	for (let i = 0; i < input.length; i++) {
+		const code = input.charCodeAt(i,)
+		h1 ^= code
+		h1 = Math.imul(h1, 0x01000193,)
+		h2 ^= code + i
+		h2 = Math.imul(h2, 0x01000193,)
+	}
+	return (h1 >>> 0).toString(16,).padStart(8, '0',) + (h2 >>> 0).toString(16,).padStart(8, '0',)
+}
+
+/**
+ * Resolves a notification ID from an optional `dedupeKey`, preserving keys
+ * within Chrome's 500-character limit and compacting longer keys into a
+ * deterministic bounded ID.
+ */
+function resolveNotificationID (dedupeKey?: string,): string {
+	if (dedupeKey === undefined) {
+		return crypto.randomUUID()
+	}
+	if (dedupeKey.length <= MAX_NOTIFICATION_ID_LENGTH) {
+		return dedupeKey
+	}
+	return `${dedupeKey.slice(0, COMPACT_DEDUPE_PREFIX_LENGTH,)}:${hashDedupeKey(dedupeKey,)}`
+}
+
 /**
  * Raises a native OS/browser notification.
  */
@@ -78,7 +116,7 @@ async function sendNativeNotification (
 	const label = await containerLabel(cookieStoreId,)
 	// A shared dedupeKey reuses the same notification id, so a second tab raising
 	// the same notification updates the existing one instead of stacking a duplicate.
-	const notificationID = await browser.notifications.create(dedupeKey ?? crypto.randomUUID(), {
+	const notificationID = await browser.notifications.create(resolveNotificationID(dedupeKey,), {
 		type: 'basic',
 		iconUrl: browser.runtime.getURL('data/images/icon48.png',),
 		title: label ? `${title} (${label})` : title,
@@ -98,7 +136,7 @@ async function sendPageNotification (
 ): Promise<string> {
 	// Reuse the dedupeKey as the in-page id so the container can drop a duplicate
 	// broadcast for the same item (see PageNotificationContainer's dedup on show).
-	const notificationID = dedupeKey ?? crypto.randomUUID()
+	const notificationID = resolveNotificationID(dedupeKey,)
 	await notificationMetaStore.set(notificationID, {type: 'page', url, cookieStoreId,},)
 	const message = {
 		action: 'toolbox-show-page-notification',
