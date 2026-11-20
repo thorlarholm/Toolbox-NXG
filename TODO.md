@@ -10,7 +10,7 @@
 
 ## Review for Claude
 
-- [x] **Review: compact overlong notification `dedupeKey` values to `<= 500` chars** _(reviewed 2026-11-19; rebuilt clean as `fix/notification-id-length-v2` on `upstream/main`, all 7 checks pass; PR not yet opened)_
+- [x] **Review: compact overlong notification `dedupeKey` values to `<= 500` chars** _(reviewed 2026-11-19; rebuilt clean on `upstream/main`, all 7 checks pass; renamed to `fix/notification-id-length` (local + origin) on 2026-11-20; PR not yet opened)_
   - **Verdict:** Correct. Compacted IDs are 217 chars (200-char prefix + `:` + 16-hex FNV-1a digest) and deterministic. No caller looks up notifications by the raw `dedupeKey` (consumers only use the returned ID), so compaction is safe.
   - **Done:** deleted the old contaminated local branch `fix/notification-id-length` (`f4c8c182`) on 2026-11-19.
   - **Context:** Consolidated notifier polls (`mq:consolidated:...` / `um:consolidated:...`) can exceed Chrome's 500-character limit on `chrome.notifications.create` IDs (`The notification's ID should be 500 characters or less`).
